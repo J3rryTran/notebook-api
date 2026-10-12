@@ -1,0 +1,53 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: notebook-api
+  datasource:
+    url: jdbc:h2:mem:notebookdb;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE;MODE=PostgreSQL
+    driverClassName: org.h2.Driver
+    username: sa
+    password: ""
+  jpa:
+    database-platform: org.hibernate.dialect.H2Dialect
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: false
+
+notebook:
+  enabled: true
+  cell:
+    source:
+      max-size: 1048576
+  max:
+    cells: 500
+    page-size: 200
+  revision:
+    auto:
+      enabled: true
+    max-per-notebook: 100
+  import:
+    max-size: 16777216
+
+kyuubi:
+  rest-url: http://localhost:10099
+  connect-timeout: 10s
+  request-timeout: 60s
+  session-open-timeout: 10m
+  idle-session-timeout: 30m
+  session-configs:
+    kyuubi.engine.spark.output.mode: NOTEBOOK
+  allowed-session-config-keys:
+    - spark.executor.memory
+    - spark.executor.cores
+    - spark.sql.shuffle.partitions
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics

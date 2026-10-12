@@ -1,0 +1,6 @@
+apiVersion: v2
+name: notebook
+description: Helm chart for Standalone Notebook connecting to Kyuubi REST and Spark engines
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

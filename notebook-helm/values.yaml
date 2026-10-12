@@ -1,0 +1,53 @@
+replicaCount: 2
+
+image:
+  repository: docker.io/j3rrytran/notebook
+  tag: ""
+  pullPolicy: IfNotPresent
+
+service:
+  type: NodePort
+  port: 8080
+  nodePort: 32380
+
+ingress:
+  enabled: false
+  className: nginx
+  host: notebook.example.local
+  tls: []
+
+kyuubi:
+  restUrl: http://kyuubi-rest.kyuubi.svc.cluster.local:10099
+  connectTimeout: 10s
+  requestTimeout: 60s
+  sessionOpenTimeout: 10m
+  sessionConfigs:
+    kyuubi.engine.spark.output.mode: NOTEBOOK
+  allowedSessionConfigKeys:
+    - spark.executor.memory
+    - spark.executor.cores
+    - spark.sql.shuffle.partitions
+  idleSessionTimeout: 30m
+
+oidc:
+  issuer: https://10.29.19.56:32004/realms/lakehouse
+  clientId: kyuubi-notebook
+  redirectPath: /auth/callback
+  scopes: [openid, profile]
+  usernameClaim: preferred_username
+
+postgres:
+  host: postgres-postgresql.postgres.svc.cluster.local
+  port: 5432
+  database: notebook
+  username: notebook
+  existingSecret: notebook-secrets
+  passwordKey: postgres-password
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 512Mi
+  limits:
+    cpu: 1000m
+    memory: 1Gi
