@@ -80,9 +80,9 @@ public class KyuubiAuthDelegationFilter extends OncePerRequestFilter {
 
         String authHeader = request.getHeader(HttpHeaders.AUTHORIZATION);
 
-        // 1. Nếu không có header Authorization -> 401 UNAUTHENTICATED
-        if (authHeader == null || authHeader.isBlank()) {
-            writeError(response, HttpStatus.UNAUTHORIZED, "UNAUTHENTICATED", "Missing Authorization header");
+        // 1. Nếu không có header Authorization hoặc không phải Bearer -> 401 UNAUTHENTICATED
+        if (authHeader == null || authHeader.isBlank() || !authHeader.startsWith("Bearer ")) {
+            writeError(response, HttpStatus.UNAUTHORIZED, "UNAUTHENTICATED", "Missing or invalid Bearer Authorization header");
             return;
         }
 
@@ -128,6 +128,11 @@ public class KyuubiAuthDelegationFilter extends OncePerRequestFilter {
             }
         }
 
+        if (username == null) {
+            writeError(response, HttpStatus.UNAUTHORIZED, "UNAUTHENTICATED", "Token is missing claim '" + usernameClaim + "'");
+            return;
+        }
+
         // Set Security Context
         UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
                 username, authHeader, List.of(new SimpleGrantedAuthority("ROLE_USER")));
@@ -145,21 +150,15 @@ public class KyuubiAuthDelegationFilter extends OncePerRequestFilter {
                     byte[] payloadBytes = Base64.getUrlDecoder().decode(parts[1]);
                     JsonNode json = objectMapper.readTree(payloadBytes);
                     if (json.has(usernameClaim)) {
-                        return json.get(usernameClaim).asText();
-                    }
-                    if (json.has("sub")) {
-                        return json.get("sub").asText();
+                        String user = json.get(usernameClaim).asText();
+                        if (!user.isBlank()) {
+                            return user;
+                        }
                     }
                 } catch (Exception ignored) {}
             }
-        } else if (authHeader.startsWith("Basic ")) {
-            try {
-                String creds = new String(Base64.getDecoder().decode(authHeader.substring(6)), StandardCharsets.UTF_8);
-                int colon = creds.indexOf(':');
-                if (colon > 0) return creds.substring(0, colon);
-            } catch (Exception ignored) {}
         }
-        return "authenticated-user";
+        return null;
     }
 
     private void writeError(HttpServletResponse response, HttpStatus status, String code, String message) throws IOException {

@@ -114,6 +114,81 @@ public class NotebookExecutionController {
         return ResponseEntity.noContent().build();
     }
 
+    @GetMapping("/executions/{executionId}/outputs")
+    public ResponseEntity<String> getExecutionOutputs(
+            @PathVariable("executionId") String executionId,
+            @AuthenticationPrincipal Object principal,
+            HttpServletRequest request) {
+        String auth = request.getHeader(HttpHeaders.AUTHORIZATION);
+        NotebookExecution exec = executionService.syncAndGetExecution(executionId, principal.toString(), auth);
+        return ResponseEntity.ok(exec.getResultOutput() != null ? exec.getResultOutput() : "[]");
+    }
+
+    @GetMapping("/executions/{executionId}/logs")
+    public ResponseEntity<Map<String, Object>> getExecutionLogs(
+            @PathVariable("executionId") String executionId,
+            @RequestParam(value = "afterSequence", defaultValue = "0") long afterSequence,
+            @AuthenticationPrincipal Object principal,
+            HttpServletRequest request) {
+        String auth = request.getHeader(HttpHeaders.AUTHORIZATION);
+        NotebookExecution exec = executionService.syncAndGetExecution(executionId, principal.toString(), auth);
+        return ResponseEntity.ok(Map.of(
+                "executionId", executionId,
+                "logs", exec.getLogOutput() != null ? exec.getLogOutput() : ""
+        ));
+    }
+
+    @GetMapping("/executions/{executionId}/results")
+    public ResponseEntity<String> getExecutionResults(
+            @PathVariable("executionId") String executionId,
+            @RequestParam(value = "offset", defaultValue = "0") int offset,
+            @RequestParam(value = "limit", defaultValue = "100") int limit,
+            @AuthenticationPrincipal Object principal,
+            HttpServletRequest request) {
+        String auth = request.getHeader(HttpHeaders.AUTHORIZATION);
+        NotebookExecution exec = executionService.syncAndGetExecution(executionId, principal.toString(), auth);
+        return ResponseEntity.ok(exec.getResultOutput() != null ? exec.getResultOutput() : "[]");
+    }
+
+    @DeleteMapping("/notebook-sessions/{sessionId}")
+    public ResponseEntity<Void> closeSession(
+            @PathVariable("sessionId") String sessionId,
+            @AuthenticationPrincipal Object principal,
+            HttpServletRequest request) {
+        NotebookSession session = sessionRepository.findById(sessionId).orElse(null);
+        if (session != null && session.getUserId().equals(principal.toString())) {
+            session.setStatus("CLOSED");
+            sessionRepository.save(session);
+        }
+        return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping("/notebook-sessions/{sessionId}/runtimes")
+    public ResponseEntity<Map<String, Object>> getSessionRuntimes(
+            @PathVariable("sessionId") String sessionId,
+            @AuthenticationPrincipal Object principal) {
+        NotebookSession session = sessionRepository.findById(sessionId)
+                .orElseThrow(() -> new com.vtnexus.notebook.common.exception.NotebookApiException("NOTEBOOK_SESSION_NOT_FOUND", "Session not found", org.springframework.http.HttpStatus.NOT_FOUND));
+        if (!session.getUserId().equals(principal.toString())) {
+            throw new com.vtnexus.notebook.common.exception.NotebookApiException("NOTEBOOK_SESSION_NOT_FOUND", "Session not found", org.springframework.http.HttpStatus.NOT_FOUND);
+        }
+        return ResponseEntity.ok(Map.of(
+                "sessionId", session.getId(),
+                "status", session.getStatus(),
+                "instance", session.getKyuubiInstance() != null ? session.getKyuubiInstance() : ""
+        ));
+    }
+
+    @PostMapping("/notebook-runtimes/{runtimeId}:interrupt")
+    public ResponseEntity<Void> interruptRuntime(
+            @PathVariable("runtimeId") String runtimeId,
+            @AuthenticationPrincipal Object principal,
+            HttpServletRequest request) {
+        String auth = request.getHeader(HttpHeaders.AUTHORIZATION);
+        executionService.cancelExecution(runtimeId, principal.toString(), auth);
+        return ResponseEntity.noContent().build();
+    }
+
     @GetMapping("/executions")
     public ResponseEntity<List<NotebookExecution>> listExecutions(
             @RequestParam("notebookId") String notebookId,
@@ -129,7 +204,7 @@ public class NotebookExecutionController {
         ));
     }
 
-    // S10: /notebook-status với số liệu thống kê thật từ database
+    // S10 & P2-8: /notebook-status với số liệu thống kê thật từ database
     @GetMapping("/notebook-status")
     public ResponseEntity<Map<String, Object>> getNotebookStatus() {
         long activeSessions = sessionRepository.countByStatus("READY");

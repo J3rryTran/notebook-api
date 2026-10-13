@@ -26,8 +26,8 @@ spring:
         default_schema: nb_execution
 
 notebook:
-  internal-token: "dev-internal-secret-token"
-  document-service-url: "http://localhost:8080"
+  internal-token: ${NOTEBOOK_INTERNAL_TOKEN}
+  notebook-service-url: "http://localhost:8080"
   results:
     max-rows: 1000
 

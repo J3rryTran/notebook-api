@@ -9,3 +9,6 @@ spring:
   jpa:
     hibernate:
       ddl-auto: update
+
+notebook:
+  internal-token: "dev-internal-secret-token"

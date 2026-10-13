@@ -121,27 +121,55 @@ public class ExecutionService {
             NotebookSession session = sessionRepository.findById(exec.getSessionId()).orElse(null);
             String instance = session != null ? session.getKyuubiInstance() : null;
 
-            JsonNode event = kyuubiRestClient.getOperationEvent(exec.getKyuubiOperationId(), instance, authHeader);
-            if (event != null && event.has("state")) {
-                String state = event.get("state").asText();
+            try {
+                JsonNode event = kyuubiRestClient.getOperationEvent(exec.getKyuubiOperationId(), instance, authHeader);
+                if (event != null && event.has("state")) {
+                    String state = event.get("state").asText().toUpperCase();
 
-                if ("FINISHED".equalsIgnoreCase(state) || "ERROR".equalsIgnoreCase(state) || "TIMEOUT".equalsIgnoreCase(state)) {
-                    // Lock pessimistically để fetch và đóng operation 1 lần duy nhất
-                    exec = executionRepository.findByIdForUpdate(executionId).orElse(exec);
-                    if ("RUNNING".equals(exec.getStatus())) {
-                        if ("FINISHED".equalsIgnoreCase(state)) {
-                            exec.setStatus("SUCCEEDED");
-                            JsonNode rowset = kyuubiRestClient.getOperationRowset(exec.getKyuubiOperationId(), instance, maxRows, authHeader);
-                            if (rowset != null) {
-                                exec.setResultOutput(rowset.toString());
+                    if ("FINISHED".equals(state) || "ERROR".equals(state) || "TIMEOUT".equals(state) || "CANCELED".equals(state)) {
+                        exec = executionRepository.findByIdForUpdate(executionId).orElse(exec);
+                        if ("RUNNING".equals(exec.getStatus())) {
+                            if ("FINISHED".equals(state)) {
+                                try {
+                                    JsonNode rowset = kyuubiRestClient.getOperationRowset(exec.getKyuubiOperationId(), instance, maxRows, authHeader);
+                                    exec.setStatus("SUCCEEDED");
+                                    exec.setResultOutput(rowset != null ? rowset.toString() : "[]");
+                                    kyuubiRestClient.closeOperation(exec.getKyuubiOperationId(), instance, authHeader);
+                                } catch (Exception rowsetEx) {
+                                    exec.setStatus("FAILED");
+                                    exec.setErrorMessage("Failed to fetch rowset: " + rowsetEx.getMessage());
+                                }
+                            } else if ("CANCELED".equals(state)) {
+                                exec.setStatus("CANCELED");
+                                kyuubiRestClient.closeOperation(exec.getKyuubiOperationId(), instance, authHeader);
+                            } else {
+                                exec.setStatus("FAILED");
+                                String errMsg = "Execution failed on Kyuubi";
+                                if (event.has("exception")) {
+                                    JsonNode exNode = event.get("exception");
+                                    errMsg = exNode.isObject() && exNode.has("message") ? exNode.get("message").asText() : exNode.asText();
+                                }
+                                exec.setErrorMessage(errMsg);
+                                kyuubiRestClient.closeOperation(exec.getKyuubiOperationId(), instance, authHeader);
                             }
-                        } else {
-                            exec.setStatus("FAILED");
-                            exec.setErrorMessage(event.has("exception") ? event.get("exception").asText() : "Execution failed on Kyuubi");
+
+                            // Fetch logs
+                            List<String> logs = kyuubiRestClient.getOperationLog(exec.getKyuubiOperationId(), instance, 500, authHeader);
+                            if (!logs.isEmpty()) {
+                                exec.setLogOutput(String.join("\n", logs));
+                            }
+
+                            exec = executionRepository.save(exec);
                         }
-                        kyuubiRestClient.closeOperation(exec.getKyuubiOperationId(), instance, authHeader);
-                        exec = executionRepository.save(exec);
                     }
+                }
+            } catch (NotebookApiException ex) {
+                if ("RUNTIME_LOST".equals(ex.getCode())) {
+                    exec.setStatus("LOST");
+                    exec.setErrorMessage("Runtime lost or operation closed on engine");
+                    exec = executionRepository.save(exec);
+                } else {
+                    throw ex;
                 }
             }
         }

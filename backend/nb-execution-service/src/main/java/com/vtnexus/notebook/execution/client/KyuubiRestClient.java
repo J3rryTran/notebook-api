@@ -14,6 +14,8 @@ import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestTemplate;
 
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -163,10 +165,54 @@ public class KyuubiRestClient {
             ResponseEntity<JsonNode> response = restTemplate.exchange(
                     baseUrl + "/api/v1/operations/" + operationId + "/rowset?maxrows=" + maxRows + "&fetchorientation=FETCH_NEXT",
                     HttpMethod.GET, new HttpEntity<>(headers), JsonNode.class);
+            JsonNode body = response.getBody();
+            if (body == null) {
+                throw new NotebookApiException("KYUUBI_ERROR", "Empty rowset from Kyuubi", HttpStatus.BAD_GATEWAY);
+            }
+            return body;
+        } catch (HttpStatusCodeException ex) {
+            handleHttpStatusException(ex);
+            throw new NotebookApiException("KYUUBI_ERROR", "Failed to fetch rowset: " + ex.getMessage(), HttpStatus.BAD_GATEWAY);
+        } catch (ResourceAccessException ex) {
+            throw new NotebookApiException("KYUUBI_UNAVAILABLE", "Kyuubi unavailable: " + ex.getMessage(), HttpStatus.SERVICE_UNAVAILABLE, true, null);
+        }
+    }
+
+    public JsonNode getResultSetMetadata(String operationId, String instance, String userAuthHeader) {
+        String baseUrl = getBaseUrl(instance);
+        HttpHeaders headers = new HttpHeaders();
+        if (userAuthHeader != null) headers.set(HttpHeaders.AUTHORIZATION, userAuthHeader);
+
+        try {
+            ResponseEntity<JsonNode> response = restTemplate.exchange(
+                    baseUrl + "/api/v1/operations/" + operationId + "/resultsetmetadata",
+                    HttpMethod.GET, new HttpEntity<>(headers), JsonNode.class);
             return response.getBody();
         } catch (Exception ex) {
-            log.error("Failed to fetch rowset: {}", ex.getMessage());
+            log.warn("Resultset metadata not available or error: {}", ex.getMessage());
             return null;
+        }
+    }
+
+    public List<String> getOperationLog(String operationId, String instance, int maxRows, String userAuthHeader) {
+        String baseUrl = getBaseUrl(instance);
+        HttpHeaders headers = new HttpHeaders();
+        if (userAuthHeader != null) headers.set(HttpHeaders.AUTHORIZATION, userAuthHeader);
+
+        try {
+            ResponseEntity<JsonNode> response = restTemplate.exchange(
+                    baseUrl + "/api/v1/operations/" + operationId + "/log?maxrows=" + maxRows + "&fetchorientation=FETCH_NEXT",
+                    HttpMethod.GET, new HttpEntity<>(headers), JsonNode.class);
+            JsonNode body = response.getBody();
+            List<String> logs = new ArrayList<>();
+            if (body != null && body.has("logRowSet") && body.get("logRowSet").isArray()) {
+                for (JsonNode line : body.get("logRowSet")) {
+                    logs.add(line.asText());
+                }
+            }
+            return logs;
+        } catch (Exception ex) {
+            return Collections.emptyList();
         }
     }
 
@@ -187,9 +233,17 @@ public class KyuubiRestClient {
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_JSON);
             if (userAuthHeader != null) headers.set(HttpHeaders.AUTHORIZATION, userAuthHeader);
-            restTemplate.exchange(baseUrl + "/api/v1/operations/" + operationId, HttpMethod.PUT,
+            ResponseEntity<Void> resp = restTemplate.exchange(baseUrl + "/api/v1/operations/" + operationId, HttpMethod.PUT,
                     new HttpEntity<>(Map.of("action", "cancel"), headers), Void.class);
-        } catch (Exception ignored) {}
+            if (!resp.getStatusCode().is2xxSuccessful()) {
+                throw new NotebookApiException("KYUUBI_ERROR", "Failed to cancel operation: " + resp.getStatusCode(), HttpStatus.BAD_GATEWAY);
+            }
+        } catch (HttpStatusCodeException ex) {
+            handleHttpStatusException(ex);
+            throw new NotebookApiException("KYUUBI_ERROR", "Kyuubi cancel error: " + ex.getMessage(), HttpStatus.BAD_GATEWAY);
+        } catch (ResourceAccessException ex) {
+            throw new NotebookApiException("KYUUBI_UNAVAILABLE", "Kyuubi unavailable", HttpStatus.SERVICE_UNAVAILABLE, true, null);
+        }
     }
 
     public void closeSession(String sessionId, String instance, String userAuthHeader) {

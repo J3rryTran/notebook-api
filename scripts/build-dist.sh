@@ -50,10 +50,10 @@ rm -rf "${DIST_DIR}"
 mkdir -p "${DIST_DIR}/bin" "${DIST_DIR}/config" "${DIST_DIR}/frontend" "${DIST_DIR}/helm"
 
 # Copy Artifacts
-cp "${BACKEND_DIR}/nb-document-service/target/nb-document-service-"*.jar "${DIST_DIR}/bin/nb-document-service.jar"
+cp "${BACKEND_DIR}/nb-notebook-service/target/nb-notebook-service-"*.jar "${DIST_DIR}/bin/nb-notebook-service.jar"
 cp "${BACKEND_DIR}/nb-execution-service/target/nb-execution-service-"*.jar "${DIST_DIR}/bin/nb-execution-service.jar"
 
-cp "${BACKEND_DIR}/nb-document-service/src/main/resources/application.yml" "${DIST_DIR}/config/document-application.yml"
+cp "${BACKEND_DIR}/nb-notebook-service/src/main/resources/application.yml" "${DIST_DIR}/config/notebook-application.yml"
 cp "${BACKEND_DIR}/nb-execution-service/src/main/resources/application.yml" "${DIST_DIR}/config/execution-application.yml"
 
 cp -r "${FRONTEND_DIR}/public/"* "${DIST_DIR}/frontend/"
@@ -68,8 +68,8 @@ cat << 'EOF' > "${DIST_DIR}/start-all.sh"
 #!/usr/bin/env bash
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-echo "Khởi động nb-document-service trên port 8080 (dev profile)..."
-java -jar "${DIR}/bin/nb-document-service.jar" --spring.profiles.active=dev &
+echo "Khởi động nb-notebook-service trên port 8080 (dev profile)..."
+java -jar "${DIR}/bin/nb-notebook-service.jar" --spring.profiles.active=dev &
 DOC_PID=$!
 
 echo "Khởi động nb-execution-service trên port 8082 (dev profile)..."

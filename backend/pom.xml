@@ -20,7 +20,7 @@
 
     <modules>
         <module>nb-common</module>
-        <module>nb-document-service</module>
+        <module>nb-notebook-service</module>
         <module>nb-execution-service</module>
     </modules>
 
