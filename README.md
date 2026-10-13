@@ -73,6 +73,6 @@ thị trên giao diện. Kênh tiếp nhận: `<điền kênh của nhóm>`.
 
 | Tài liệu | Nội dung |
 |---|---|
-| [`../notebook-api-parity.md`](../notebook-api-parity.md) | Bảng khả năng F01–F47, ánh xạ `.ipynb`, cách gọi Kyuubi → Spark engine |
-| [`helm-chart-plan.md`](helm-chart-plan.md) | Plan Helm chart triển khai lên Kubernetes |
-| [`ui-plan.md`](ui-plan.md) | Plan giao diện theo bố cục kiểu Databricks |
+| [`plan/API-detail.md`](plan/API-detail.md) | Bảng khả năng F01–F47, ánh xạ `.ipynb`, cách gọi Kyuubi → Spark engine |
+| [`plan/Chart.md`](plan/Chart.md) | Plan Helm chart triển khai lên Kubernetes |
+| [`plan/UI-plan.md`](plan/UI-plan.md) | Plan giao diện theo bố cục kiểu Databricks |

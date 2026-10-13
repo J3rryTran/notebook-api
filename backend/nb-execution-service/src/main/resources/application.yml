@@ -1,0 +1,42 @@
+server:
+  port: 8082
+
+management:
+  server:
+    port: 8083
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+spring:
+  application:
+    name: nb-execution-service
+  flyway:
+    enabled: true
+    schemas: nb_execution
+    default-schema: nb_execution
+    table: flyway_schema_history
+    baseline-on-migrate: true
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        default_schema: nb_execution
+
+notebook:
+  internal-token: "dev-internal-secret-token"
+  document-service-url: "http://localhost:8080"
+  results:
+    max-rows: 1000
+
+kyuubi:
+  rest-url: http://localhost:10099
+  pin-to-instance: true
+  session-configs:
+    kyuubi.engine.spark.output.mode: NOTEBOOK
+  allowed-session-config-keys:
+    - spark.executor.memory
+    - spark.executor.cores
+    - spark.sql.shuffle.partitions
