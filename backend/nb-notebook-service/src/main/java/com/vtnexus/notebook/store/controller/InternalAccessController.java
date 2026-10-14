@@ -23,14 +23,17 @@ public class InternalAccessController {
 
     private final NotebookService notebookService;
     private final NotebookCellService cellService;
+    private final com.vtnexus.notebook.store.repository.AppUserRepository appUserRepository;
     private final String internalToken;
 
     public InternalAccessController(
             NotebookService notebookService,
             NotebookCellService cellService,
+            com.vtnexus.notebook.store.repository.AppUserRepository appUserRepository,
             @Value("${notebook.internalToken:${notebook.internal-token}}") String internalToken) {
         this.notebookService = notebookService;
         this.cellService = cellService;
+        this.appUserRepository = appUserRepository;
         this.internalToken = internalToken;
     }
 
@@ -75,6 +78,23 @@ public class InternalAccessController {
         resp.put("cellType", cell.getCellType());
         resp.put("language", cell.getLanguage());
         resp.put("source", cell.getSource());
+        return ResponseEntity.ok(resp);
+    }
+
+    @GetMapping("/users/{username}/ranger-username")
+    public ResponseEntity<Map<String, String>> getRangerUsername(
+            @PathVariable("username") String username,
+            @RequestHeader(value = "X-Internal-Token", required = false) String token) {
+
+        verifyInternalToken(token);
+        String rangerUsername = appUserRepository.findByUsername(username)
+                .map(com.vtnexus.notebook.store.model.AppUser::getRangerUsername)
+                .filter(r -> !r.isBlank())
+                .orElse(username);
+
+        Map<String, String> resp = new HashMap<>();
+        resp.put("username", username);
+        resp.put("rangerUsername", rangerUsername);
         return ResponseEntity.ok(resp);
     }
 }

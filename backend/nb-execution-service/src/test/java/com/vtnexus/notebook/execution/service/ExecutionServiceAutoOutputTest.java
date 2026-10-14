@@ -68,6 +68,8 @@ class ExecutionServiceAutoOutputTest {
         };
         TransactionTemplate txTemplate = new TransactionTemplate(txManager);
 
+        ServiceAccountTokenProvider tokenProvider = Mockito.mock(ServiceAccountTokenProvider.class);
+
         executionService = new ExecutionService(
                 sessionRepository,
                 runRepository,
@@ -77,6 +79,8 @@ class ExecutionServiceAutoOutputTest {
                 documentServiceClient,
                 objectMapper,
                 txTemplate,
+                tokenProvider,
+                "oidc",
                 1000
         );
     }

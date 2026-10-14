@@ -51,4 +51,11 @@ public class NotebookKyuubiSession {
     @Column(name = "last_used_at", nullable = false)
     @Builder.Default
     private Instant lastUsedAt = Instant.now();
+
+    @Column(name = "proxied", nullable = false)
+    @Builder.Default
+    private Boolean proxied = false;
+
+    @Column(name = "effective_user", length = 255)
+    private String effectiveUser;
 }

@@ -293,6 +293,10 @@ public class KyuubiRestClient {
     }
 
     private void handleHttpStatusException(HttpStatusCodeException ex) {
+        String respBody = ex.getResponseBodyAsString();
+        if (respBody != null && respBody.toLowerCase().contains("impersonate")) {
+            throw new NotebookApiException("PROXY_NOT_ALLOWED", "Proxy user not permitted to impersonate target user", HttpStatus.FORBIDDEN);
+        }
 
         if (ex.getStatusCode() == HttpStatus.UNAUTHORIZED || ex.getStatusCode() == HttpStatus.FORBIDDEN) {
             throw new NotebookApiException("KYUUBI_AUTH_FAILED", "Kyuubi authentication rejected", HttpStatus.UNAUTHORIZED);
