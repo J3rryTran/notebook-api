@@ -30,15 +30,36 @@ public class IpynbConversionService {
     }
 
     public Notebook importNotebook(String format, String name, String folderId, String contentJson, String user) {
-        if (contentJson != null && contentJson.getBytes().length > maxImportSize) {
+        if (contentJson != null && contentJson.getBytes(java.nio.charset.StandardCharsets.UTF_8).length > maxImportSize) {
             throw new NotebookApiException("PAYLOAD_TOO_LARGE", "Import payload exceeds size limit of " + maxImportSize + " bytes", HttpStatus.PAYLOAD_TOO_LARGE);
         }
 
+        JsonNode root;
         try {
-            JsonNode root = objectMapper.readTree(contentJson);
-            String nbName = (name != null && !name.isBlank()) ? name : "imported-notebook";
+            root = objectMapper.readTree(contentJson);
+        } catch (Exception e) {
+            throw new NotebookApiException("INVALID_REQUEST", "Failed to parse .ipynb JSON: " + e.getMessage(), HttpStatus.BAD_REQUEST);
+        }
 
-            List<Map<String, Object>> cells = new ArrayList<>();
+        try {
+            String defaultLanguage = "SQL";
+            JsonNode metaRoot = root.get("metadata");
+            if (metaRoot != null) {
+                if (metaRoot.has("language_info") && metaRoot.get("language_info").has("name")) {
+                    String langName = metaRoot.get("language_info").get("name").asText();
+                    if ("python".equalsIgnoreCase(langName)) defaultLanguage = "PYTHON";
+                    else if ("sql".equalsIgnoreCase(langName)) defaultLanguage = "SQL";
+                }
+                if (metaRoot.has("language")) {
+                    String langName = metaRoot.get("language").asText();
+                    if ("python".equalsIgnoreCase(langName)) defaultLanguage = "PYTHON";
+                    else if ("sql".equalsIgnoreCase(langName)) defaultLanguage = "SQL";
+                }
+            }
+
+            String nbName = (name != null && !name.isBlank()) ? name : "imported-notebook";
+            List<NotebookDocument.CellItem> cellItems = new ArrayList<>();
+
             JsonNode cellsNode = root.get("cells");
             if (cellsNode != null && cellsNode.isArray()) {
                 for (JsonNode cNode : cellsNode) {
@@ -60,37 +81,109 @@ public class IpynbConversionService {
                         }
                     }
 
+                    if (source.getBytes(java.nio.charset.StandardCharsets.UTF_8).length > 1048576) {
+                        throw new NotebookApiException("PAYLOAD_TOO_LARGE", "Cell source size exceeds limit of 1048576 bytes", HttpStatus.PAYLOAD_TOO_LARGE);
+                    }
+
                     String language = null;
                     JsonNode metaNode = cNode.get("metadata");
-                    if (metaNode != null && metaNode.has("kyuubi") && metaNode.get("kyuubi").has("language")) {
+                    if (metaNode != null && metaNode.has("language")) {
+                        language = metaNode.get("language").asText().toUpperCase();
+                    } else if (metaNode != null && metaNode.has("kyuubi") && metaNode.get("kyuubi").has("language")) {
                         language = metaNode.get("kyuubi").get("language").asText().toUpperCase();
                     }
 
                     if ("MARKDOWN".equals(cellType)) {
                         language = "MARKDOWN";
+                    } else if ("RAW".equals(cellType)) {
+                        language = "RAW";
                     } else if (language == null) {
                         String firstLine = source.lines().findFirst().orElse("").trim();
                         if (firstLine.startsWith("%%sql") || firstLine.startsWith("%sql")) {
                             language = "SQL";
                             source = source.substring(firstLine.length()).stripLeading();
-                        } else if (firstLine.startsWith("%%pyspark") || firstLine.startsWith("%python")) {
+                        } else if (firstLine.startsWith("%%python") || firstLine.startsWith("%python") || firstLine.startsWith("%%pyspark")) {
                             language = "PYTHON";
                             source = source.substring(firstLine.length()).stripLeading();
                         } else {
-                            language = "PYTHON"; // Default
+                            language = defaultLanguage;
                         }
                     }
 
-                    Map<String, Object> cellMap = new HashMap<>();
-                    cellMap.put("cellType", cellType);
-                    cellMap.put("language", language);
-                    cellMap.put("source", source);
-                    cells.add(cellMap);
+                    Map<String, Object> cellMetadata = new LinkedHashMap<>();
+                    if (metaNode != null && metaNode.isObject()) {
+                        metaNode.fields().forEachRemaining(entry -> {
+                            cellMetadata.put(entry.getKey(), objectMapper.convertValue(entry.getValue(), Object.class));
+                        });
+                    }
+
+                    if (cNode.has("execution_count") && !cNode.get("execution_count").isNull()) {
+                        cellMetadata.put("executionCount", cNode.get("execution_count").asInt());
+                    }
+
+                    List<Object> outputs = null;
+                    if (cNode.has("outputs") && cNode.get("outputs").isArray()) {
+                        outputs = objectMapper.convertValue(cNode.get("outputs"), List.class);
+                    }
+
+                    String cellId = cNode.has("id") ? cNode.get("id").asText() : ("cell-" + UUID.randomUUID());
+                    if (!cellId.startsWith("cell-")) {
+                        cellId = "cell-" + cellId;
+                    }
+
+                    NotebookDocument.CellItem item = NotebookDocument.CellItem.builder()
+                            .id(cellId)
+                            .type(cellType)
+                            .language(language)
+                            .source(source)
+                            .metadata(cellMetadata)
+                            .outputs(outputs)
+                            .build();
+                    cellItems.add(item);
                 }
             }
 
-            return notebookService.createNotebook(nbName, folderId, null, "spark_catalog", "default", cells, user);
+            NotebookDocument doc = NotebookDocument.builder()
+                    .schemaVersion(1)
+                    .defaultLanguage(defaultLanguage)
+                    .metadata(new LinkedHashMap<>())
+                    .parameters(new ArrayList<>())
+                    .cells(cellItems)
+                    .build();
 
+            doc.getMetadata().put("name", nbName.trim());
+            if (metaRoot != null && metaRoot.has("kernelspec")) {
+                doc.getMetadata().put("kernelspec", objectMapper.convertValue(metaRoot.get("kernelspec"), Object.class));
+            }
+            if (metaRoot != null && metaRoot.has("language_info")) {
+                doc.getMetadata().put("language_info", objectMapper.convertValue(metaRoot.get("language_info"), Object.class));
+            }
+
+            String docJson = objectMapper.writeValueAsString(doc);
+            if (docJson.getBytes(java.nio.charset.StandardCharsets.UTF_8).length > 16 * 1024 * 1024) {
+                throw new NotebookApiException("PAYLOAD_TOO_LARGE", "Notebook document size exceeds 16 MB limit", HttpStatus.PAYLOAD_TOO_LARGE);
+            }
+
+            String notebookId = UUID.randomUUID().toString();
+            Notebook notebook = Notebook.builder()
+                    .id(notebookId)
+                    .name(nbName.trim())
+                    .folderId(folderId)
+                    .description("")
+                    .owner(user)
+                    .notebookFormat("SQLLAB_JSON_V1")
+                    .defaultLanguage(defaultLanguage)
+                    .documentJson(docJson)
+                    .currentRevision(1L)
+                    .lockVersion(0L)
+                    .build();
+
+            Notebook saved = notebookService.getNotebookRepository().save(notebook);
+            notebookService.snapshotRevision(notebookId, "Imported from .ipynb", user, "IMPORT");
+            return saved;
+
+        } catch (NotebookApiException nae) {
+            throw nae;
         } catch (Exception e) {
             throw new NotebookApiException("INVALID_REQUEST", "Failed to parse .ipynb file: " + e.getMessage(), HttpStatus.BAD_REQUEST);
         }
@@ -112,13 +205,21 @@ public class IpynbConversionService {
         root.put("nbformat_minor", 5);
 
         ObjectNode metadata = root.putObject("metadata");
-        ObjectNode kernelSpec = metadata.putObject("kernelspec");
-        kernelSpec.put("name", "python3");
-        kernelSpec.put("display_name", "Python 3 (PySpark / Kyuubi)");
-        kernelSpec.put("language", "python");
+        if (doc.getMetadata() != null && doc.getMetadata().containsKey("kernelspec")) {
+            metadata.set("kernelspec", objectMapper.valueToTree(doc.getMetadata().get("kernelspec")));
+        } else {
+            ObjectNode kernelSpec = metadata.putObject("kernelspec");
+            kernelSpec.put("name", "python3");
+            kernelSpec.put("display_name", "Python 3 (PySpark / Kyuubi)");
+            kernelSpec.put("language", "python");
+        }
 
-        ObjectNode languageInfo = metadata.putObject("language_info");
-        languageInfo.put("name", "python");
+        if (doc.getMetadata() != null && doc.getMetadata().containsKey("language_info")) {
+            metadata.set("language_info", objectMapper.valueToTree(doc.getMetadata().get("language_info")));
+        } else {
+            ObjectNode languageInfo = metadata.putObject("language_info");
+            languageInfo.put("name", "python");
+        }
 
         ArrayNode cellsNode = root.putArray("cells");
         for (NotebookDocument.CellItem cell : doc.getCells()) {
@@ -127,8 +228,19 @@ public class IpynbConversionService {
             c.put("cell_type", cell.getType().toLowerCase());
 
             ObjectNode cMeta = c.putObject("metadata");
-            ObjectNode kyuubiMeta = cMeta.putObject("kyuubi");
-            kyuubiMeta.put("language", cell.getLanguage().toLowerCase());
+            if (cell.getMetadata() != null) {
+                cell.getMetadata().forEach((k, v) -> {
+                    if (!"executionCount".equals(k)) {
+                        cMeta.set(k, objectMapper.valueToTree(v));
+                    }
+                });
+            }
+            if (!"MARKDOWN".equalsIgnoreCase(cell.getType()) && !"RAW".equalsIgnoreCase(cell.getType())) {
+                ObjectNode kyuubiMeta = cMeta.has("kyuubi") && cMeta.get("kyuubi").isObject()
+                        ? (ObjectNode) cMeta.get("kyuubi")
+                        : cMeta.putObject("kyuubi");
+                kyuubiMeta.put("language", cell.getLanguage().toLowerCase());
+            }
 
             ArrayNode srcArr = c.putArray("source");
             String[] lines = cell.getSource().split("\n", -1);
@@ -145,7 +257,12 @@ public class IpynbConversionService {
                 } else {
                     c.putNull("execution_count");
                 }
-                c.putArray("outputs");
+
+                if (includeOutputs && cell.getOutputs() != null) {
+                    c.set("outputs", objectMapper.valueToTree(cell.getOutputs()));
+                } else {
+                    c.putArray("outputs");
+                }
             }
         }
 

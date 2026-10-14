@@ -69,7 +69,7 @@ public class NotebookCellService {
             throw new NotebookApiException("PAYLOAD_TOO_LARGE", "Notebook already reached max cell limit of " + maxCells, HttpStatus.PAYLOAD_TOO_LARGE);
         }
 
-        if (source != null && source.getBytes().length > maxSourceSize) {
+        if (source != null && source.getBytes(java.nio.charset.StandardCharsets.UTF_8).length > maxSourceSize) {
             throw new NotebookApiException("PAYLOAD_TOO_LARGE", "Cell source size exceeds limit of " + maxSourceSize + " bytes", HttpStatus.PAYLOAD_TOO_LARGE);
         }
 
@@ -106,7 +106,7 @@ public class NotebookCellService {
 
         NotebookDocument doc = notebookService.parseDocument(notebook.getDocumentJson());
 
-        if (source != null && source.getBytes().length > maxSourceSize) {
+        if (source != null && source.getBytes(java.nio.charset.StandardCharsets.UTF_8).length > maxSourceSize) {
             throw new NotebookApiException("PAYLOAD_TOO_LARGE", "Cell source size exceeds limit of " + maxSourceSize + " bytes", HttpStatus.PAYLOAD_TOO_LARGE);
         }
 
@@ -177,9 +177,15 @@ public class NotebookCellService {
 
     private void saveNotebookDocument(Notebook notebook, NotebookDocument doc) {
         try {
-            notebook.setDocumentJson(objectMapper.writeValueAsString(doc));
+            String json = objectMapper.writeValueAsString(doc);
+            if (json.getBytes(java.nio.charset.StandardCharsets.UTF_8).length > 16 * 1024 * 1024) {
+                throw new NotebookApiException("PAYLOAD_TOO_LARGE", "Notebook document size exceeds 16 MB limit", HttpStatus.PAYLOAD_TOO_LARGE);
+            }
+            notebook.setDocumentJson(json);
             notebook.setCurrentRevision(notebook.getCurrentRevision() + 1);
             notebookRepository.save(notebook);
+        } catch (NotebookApiException nae) {
+            throw nae;
         } catch (Exception e) {
             throw new NotebookApiException("INTERNAL_ERROR", "Failed to serialize document: " + e.getMessage(), HttpStatus.INTERNAL_SERVER_ERROR);
         }

@@ -110,14 +110,12 @@ class IpynbConversionAndRoundTripTest {
         assertThat(ipynbJson).contains("# Title markdown");
 
         // Import ngược lại từ ipynb
-        when(notebookService.createNotebook(anyString(), any(), any(), any(), any(), any(), anyString()))
-                .thenAnswer(inv -> {
-                    Notebook created = new Notebook();
-                    created.setName(inv.getArgument(0));
-                    return created;
-                });
+        com.vtnexus.notebook.store.repository.NotebookRepository repoMock = Mockito.mock(com.vtnexus.notebook.store.repository.NotebookRepository.class);
+        when(notebookService.getNotebookRepository()).thenReturn(repoMock);
+        when(repoMock.save(any(Notebook.class))).thenAnswer(inv -> inv.getArgument(0));
 
         Notebook imported = conversionService.importNotebook("IPYNB", "Imported Note", null, ipynbJson, "testuser");
         assertThat(imported.getName()).isEqualTo("Imported Note");
+        assertThat(imported.getNotebookFormat()).isEqualTo("SQLLAB_JSON_V1");
     }
 }

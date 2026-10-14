@@ -97,8 +97,9 @@ public class NotebookDocumentController {
     @DeleteMapping("/notebooks/{notebookId}")
     public ResponseEntity<Void> deleteNotebook(@PathVariable("notebookId") String notebookId,
                                                @RequestParam(value = "version", required = false) Long version,
+                                               @RequestParam(value = "purge", defaultValue = "false") boolean purge,
                                                @AuthenticationPrincipal Object principal) {
-        notebookService.deleteNotebook(notebookId, version, principal.toString());
+        notebookService.deleteNotebook(notebookId, version, principal.toString(), purge);
         return ResponseEntity.noContent().build();
     }
 

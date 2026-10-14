@@ -21,6 +21,7 @@ public class NotebookService {
     private final NotebookPermissionRepository permissionRepository;
     private final NotebookRevisionRepository revisionRepository;
     private final ObjectMapper objectMapper;
+    private final jakarta.persistence.EntityManager entityManager;
 
     private final int maxCells;
     private final int maxPageSize;
@@ -31,6 +32,7 @@ public class NotebookService {
             NotebookPermissionRepository permissionRepository,
             NotebookRevisionRepository revisionRepository,
             ObjectMapper objectMapper,
+            jakarta.persistence.EntityManager entityManager,
             @Value("${notebook.max.cells:500}") int maxCells,
             @Value("${notebook.max.page-size:200}") int maxPageSize,
             @Value("${notebook.revision.max-per-notebook:100}") int maxRevisions) {
@@ -38,10 +40,16 @@ public class NotebookService {
         this.permissionRepository = permissionRepository;
         this.revisionRepository = revisionRepository;
         this.objectMapper = objectMapper;
+        this.entityManager = entityManager;
         this.maxCells = maxCells;
         this.maxPageSize = maxPageSize;
         this.maxRevisions = maxRevisions;
     }
+
+    public NotebookRepository getNotebookRepository() {
+        return notebookRepository;
+    }
+
 
     public String checkAccess(Notebook notebook, String user, String requiredRole) {
         if (notebook.getOwner().equals(user)) {
@@ -104,6 +112,10 @@ public class NotebookService {
                 String language = (String) cellData.getOrDefault("language", "SQL");
                 String source = (String) cellData.getOrDefault("source", "");
 
+                if (source != null && source.getBytes(java.nio.charset.StandardCharsets.UTF_8).length > 1048576) {
+                    throw new NotebookApiException("PAYLOAD_TOO_LARGE", "Cell source size exceeds limit of 1048576 bytes", HttpStatus.PAYLOAD_TOO_LARGE);
+                }
+
                 NotebookDocument.CellItem item = NotebookDocument.CellItem.builder()
                         .id("cell-" + UUID.randomUUID())
                         .type(cellType != null ? cellType.toUpperCase() : "CODE")
@@ -127,6 +139,9 @@ public class NotebookService {
         String documentJson;
         try {
             documentJson = objectMapper.writeValueAsString(doc);
+            validateDocumentSize(documentJson);
+        } catch (NotebookApiException nae) {
+            throw nae;
         } catch (Exception e) {
             throw new NotebookApiException("INTERNAL_ERROR", "Failed to serialize notebook document: " + e.getMessage(), HttpStatus.INTERNAL_SERVER_ERROR);
         }
@@ -177,16 +192,21 @@ public class NotebookService {
         if (name != null && !name.isBlank()) notebook.setName(name.trim());
         if (description != null) notebook.setDescription(description);
 
-        // Cập nhật metadata trong documentJson
+        // C23: Cập nhật metadata trong documentJson. Lỗi parse/serialize -> 400 INVALID_DOCUMENT, không tăng revision, không lưu
+        NotebookDocument doc;
         try {
-            NotebookDocument doc = parseDocument(notebook.getDocumentJson());
+            doc = parseDocument(notebook.getDocumentJson());
             if (name != null && !name.isBlank()) doc.getMetadata().put("name", name.trim());
             if (description != null) doc.getMetadata().put("description", description);
             if (defaultCatalog != null) doc.getMetadata().put("defaultCatalog", defaultCatalog);
             if (defaultSchema != null) doc.getMetadata().put("defaultSchema", defaultSchema);
-            notebook.setDocumentJson(objectMapper.writeValueAsString(doc));
+            String newDocJson = objectMapper.writeValueAsString(doc);
+            validateDocumentSize(newDocJson);
+            notebook.setDocumentJson(newDocJson);
+        } catch (NotebookApiException nae) {
+            throw nae;
         } catch (Exception e) {
-            // Không ngắt nếu parse doc lỗi nhẹ, giữ nguyên document_json
+            throw new NotebookApiException("INVALID_DOCUMENT", "Failed to update notebook document: " + e.getMessage(), HttpStatus.BAD_REQUEST);
         }
 
         notebook.setCurrentRevision(notebook.getCurrentRevision() + 1);
@@ -195,16 +215,67 @@ public class NotebookService {
         return saved;
     }
 
-    public void deleteNotebook(String notebookId, Long version, String user) {
-        Notebook notebook = getNotebook(notebookId, user);
+    public void deleteNotebook(String notebookId, Long version, String user, boolean purge) {
+        Notebook notebook = notebookRepository.findById(notebookId)
+                .orElseThrow(() -> new NotebookApiException("NOTEBOOK_NOT_FOUND", "Notebook not found: " + notebookId, HttpStatus.NOT_FOUND));
+
         checkAccess(notebook, user, "OWNER");
 
         if (version != null && !notebook.getLockVersion().equals(version)) {
             throw new NotebookApiException("VERSION_CONFLICT", "Notebook was modified concurrently", HttpStatus.CONFLICT);
         }
 
-        notebook.setDeletedAt(Instant.now());
-        notebookRepository.save(notebook);
+        if (purge) {
+            // C21 Purge: xóa thật trong một transaction: logs -> cell-runs -> runs -> kyuubi-sessions -> revisions -> permissions -> notebook
+            entityManager.createNativeQuery(
+                    "DELETE l FROM notebook_execution_logs l " +
+                    "JOIN notebook_cell_runs cr ON l.cell_run_id = cr.id " +
+                    "JOIN notebook_runs r ON cr.notebook_run_id = r.id " +
+                    "WHERE r.notebook_id = :nbId")
+                    .setParameter("nbId", notebookId)
+                    .executeUpdate();
+
+            entityManager.createNativeQuery(
+                    "DELETE cr FROM notebook_cell_runs cr " +
+                    "JOIN notebook_runs r ON cr.notebook_run_id = r.id " +
+                    "WHERE r.notebook_id = :nbId")
+                    .setParameter("nbId", notebookId)
+                    .executeUpdate();
+
+            entityManager.createNativeQuery(
+                    "DELETE FROM notebook_runs WHERE notebook_id = :nbId")
+                    .setParameter("nbId", notebookId)
+                    .executeUpdate();
+
+            entityManager.createNativeQuery(
+                    "DELETE FROM notebook_kyuubi_sessions WHERE notebook_id = :nbId")
+                    .setParameter("nbId", notebookId)
+                    .executeUpdate();
+
+            entityManager.createNativeQuery(
+                    "DELETE FROM notebook_revisions WHERE notebook_id = :nbId")
+                    .setParameter("nbId", notebookId)
+                    .executeUpdate();
+
+            entityManager.createNativeQuery(
+                    "DELETE FROM notebook_permissions WHERE notebook_id = :nbId")
+                    .setParameter("nbId", notebookId)
+                    .executeUpdate();
+
+            entityManager.createNativeQuery(
+                    "DELETE FROM notebooks WHERE id = :nbId")
+                    .setParameter("nbId", notebookId)
+                    .executeUpdate();
+        } else {
+            // Xóa mềm: đánh dấu deleted_at và thu hồi permissions chia sẻ để biến mất khỏi danh sách người khác
+            notebook.setDeletedAt(Instant.now());
+            notebookRepository.save(notebook);
+            permissionRepository.deleteByNotebookId(notebookId);
+        }
+    }
+
+    public void deleteNotebook(String notebookId, Long version, String user) {
+        deleteNotebook(notebookId, version, user, false);
     }
 
     public void snapshotRevision(String notebookId, String reason, String user, String revisionType) {
@@ -225,15 +296,14 @@ public class NotebookService {
                     .build();
             revisionRepository.save(revision);
 
-            // Dọn dẹp revision AUTO vượt maxRevisions
+            // C24: Đếm và xóa CHỈ revision_type='AUTO', giữ MANUAL/IMPORT
             long autoCount = revisionRepository.countAutoRevisions(notebookId);
             if (autoCount > maxRevisions) {
-                List<NotebookRevision> revs = revisionRepository.findByNotebookIdOrderByRevisionNumberDesc(
-                        notebookId, PageRequest.of(maxRevisions, 50));
-                for (NotebookRevision r : revs) {
-                    if ("AUTO".equalsIgnoreCase(r.getRevisionType())) {
-                        revisionRepository.delete(r);
-                    }
+                int toDelete = (int) (autoCount - maxRevisions);
+                List<NotebookRevision> oldAutoRevs = revisionRepository.findAutoRevisionsOrderByRevisionNumberAsc(
+                        notebookId, PageRequest.of(0, toDelete));
+                for (NotebookRevision r : oldAutoRevs) {
+                    revisionRepository.delete(r);
                 }
             }
 
@@ -243,6 +313,7 @@ public class NotebookService {
             throw new NotebookApiException("INTERNAL_ERROR", "Failed to create notebook revision snapshot: " + e.getMessage(), HttpStatus.INTERNAL_SERVER_ERROR);
         }
     }
+
 
     public List<NotebookPermission> getPermissions(String notebookId, String user) {
         Notebook notebook = getNotebook(notebookId, user);
@@ -292,6 +363,12 @@ public class NotebookService {
         return savedList;
     }
 
+    private void validateDocumentSize(String documentJson) {
+        if (documentJson != null && documentJson.getBytes(java.nio.charset.StandardCharsets.UTF_8).length > 16 * 1024 * 1024) {
+            throw new NotebookApiException("PAYLOAD_TOO_LARGE", "Notebook document size exceeds 16 MB limit", HttpStatus.PAYLOAD_TOO_LARGE);
+        }
+    }
+
     public NotebookDocument parseDocument(String documentJson) {
         if (documentJson == null || documentJson.isBlank()) {
             return NotebookDocument.builder()
@@ -300,10 +377,15 @@ public class NotebookService {
                     .cells(new ArrayList<>())
                     .build();
         }
+        NotebookDocument doc;
         try {
-            return objectMapper.readValue(documentJson, NotebookDocument.class);
+            doc = objectMapper.readValue(documentJson, NotebookDocument.class);
         } catch (Exception e) {
             throw new NotebookApiException("UNSUPPORTED_FORMAT", "Failed to parse document JSON: " + e.getMessage(), HttpStatus.CONFLICT);
         }
+        if (doc.getSchemaVersion() != 1) {
+            throw new NotebookApiException("UNSUPPORTED_FORMAT", "Unsupported schemaVersion: " + doc.getSchemaVersion() + ". Expected 1.", HttpStatus.CONFLICT);
+        }
+        return doc;
     }
 }

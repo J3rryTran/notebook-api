@@ -21,5 +21,9 @@ public interface NotebookRevisionRepository extends JpaRepository<NotebookRevisi
     @Query("SELECT COUNT(r) FROM NotebookRevision r WHERE r.notebookId = :notebookId AND r.revisionType = 'AUTO'")
     long countAutoRevisions(@Param("notebookId") String notebookId);
 
+    @Query("SELECT r FROM NotebookRevision r WHERE r.notebookId = :notebookId AND r.revisionType = 'AUTO' ORDER BY r.revisionNumber ASC")
+    List<NotebookRevision> findAutoRevisionsOrderByRevisionNumberAsc(@Param("notebookId") String notebookId, Pageable pageable);
+
     void deleteByNotebookId(String notebookId);
 }
+
