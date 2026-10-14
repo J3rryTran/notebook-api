@@ -16,9 +16,9 @@ public class AuthProperties {
 
     private String mode; // oidc | no-oidc | ldap
     private String usernameClaim = "preferred_username";
-    private String cacheTtl = "60s";
-    private String sessionTtl = "8h";
-    private String recheck = "10m";
+    private java.time.Duration cacheTtl = java.time.Duration.ofSeconds(60);
+    private java.time.Duration sessionTtl = java.time.Duration.ofHours(8);
+    private java.time.Duration recheck = java.time.Duration.ofMinutes(10);
     private boolean allowUnverified = false;
 
     private OidcProperties oidc = new OidcProperties();

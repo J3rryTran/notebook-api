@@ -5,6 +5,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import com.vtnexus.notebook.common.exception.NotebookApiException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
@@ -22,6 +24,8 @@ import java.util.concurrent.TimeUnit;
 
 @Component
 public class BearerDelegationAuthenticator {
+
+    private static final Logger log = LoggerFactory.getLogger(BearerDelegationAuthenticator.class);
 
     private final String kyuubiRestUrl;
     private final String usernameClaim;
@@ -78,11 +82,17 @@ public class BearerDelegationAuthenticator {
             username = payload.get(usernameClaim).asText();
 
             long expSeconds = payload.path("exp").asLong(0);
-            expInstant = expSeconds > 0 ? Instant.ofEpochSecond(expSeconds) : Instant.now().plus(cacheTtl);
+            if (expSeconds > 0) {
+                expInstant = Instant.ofEpochSecond(expSeconds);
+            } else {
+                log.debug("Bearer token has no 'exp' claim, caching for cacheTtl: {}", cacheTtl);
+                expInstant = Instant.now().plus(cacheTtl);
+            }
         } catch (NotebookApiException ex) {
             throw ex;
         } catch (Exception ex) {
-            throw new NotebookApiException("UNAUTHENTICATED", "Failed to decode JWT payload: " + ex.getMessage(), HttpStatus.UNAUTHORIZED);
+            log.warn("Failed to decode JWT payload: {}", ex.getMessage());
+            throw new NotebookApiException("UNAUTHENTICATED", "Invalid bearer token", HttpStatus.UNAUTHORIZED);
         }
 
         // 2. Gọi Kyuubi /api/v1/ping để xác thực token
@@ -107,14 +117,15 @@ public class BearerDelegationAuthenticator {
                 return username;
             } else if (status == 401 || status == 403) {
                 tokenCache.invalidate(cacheKey);
-                throw new NotebookApiException("UNAUTHENTICATED", "Kyuubi rejected bearer token with status " + status, HttpStatus.UNAUTHORIZED);
+                throw new NotebookApiException("UNAUTHENTICATED", "Bearer token rejected by engine", HttpStatus.UNAUTHORIZED);
             } else {
-                throw new NotebookApiException("AUTH_BACKEND_UNAVAILABLE", "Kyuubi returned unexpected status " + status, HttpStatus.SERVICE_UNAVAILABLE);
+                throw new NotebookApiException("AUTH_BACKEND_UNAVAILABLE", "Engine authentication service returned error", HttpStatus.SERVICE_UNAVAILABLE);
             }
         } catch (NotebookApiException ex) {
             throw ex;
         } catch (Exception ex) {
-            throw new NotebookApiException("AUTH_BACKEND_UNAVAILABLE", "Failed to connect to Kyuubi auth backend: " + ex.getMessage(), HttpStatus.SERVICE_UNAVAILABLE);
+            log.warn("Failed to connect to Kyuubi auth backend: {}", ex.getMessage());
+            throw new NotebookApiException("AUTH_BACKEND_UNAVAILABLE", "Failed to connect to authentication backend", HttpStatus.SERVICE_UNAVAILABLE);
         }
     }
 

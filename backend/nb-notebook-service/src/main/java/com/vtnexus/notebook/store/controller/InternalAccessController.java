@@ -35,7 +35,8 @@ public class InternalAccessController {
     }
 
     private void verifyInternalToken(String token) {
-        if (token == null || internalToken == null || !token.equals(internalToken)) {
+        if (token == null || internalToken == null || internalToken.isBlank() ||
+                !java.security.MessageDigest.isEqual(token.getBytes(java.nio.charset.StandardCharsets.UTF_8), internalToken.getBytes(java.nio.charset.StandardCharsets.UTF_8))) {
             throw new NotebookApiException("ACCESS_DENIED", "Invalid internal access token", HttpStatus.UNAUTHORIZED);
         }
     }

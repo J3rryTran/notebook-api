@@ -190,9 +190,28 @@ root
       return v ? v[2] : null;
     }
 
+    async function api(path, opts = {}) {
+      const options = { ...opts };
+      options.headers = { ...(options.headers || {}) };
+
+      const method = (options.method || 'GET').toUpperCase();
+      if (method !== 'GET' && method !== 'HEAD') {
+        const xsrf = getCookie('XSRF-TOKEN');
+        if (xsrf) {
+          options.headers['X-XSRF-TOKEN'] = xsrf;
+        }
+      }
+
+      if (window.currentUser && window.currentUser.access_token) {
+        options.headers['Authorization'] = `Bearer ${window.currentUser.access_token}`;
+      }
+
+      return fetch(path, options);
+    }
+
     async function checkAuthStatus() {
       try {
-        const confRes = await fetch('/api/v1/auth/config');
+        const confRes = await api('/api/v1/auth/config');
         if (confRes.ok) {
           authConfig = await confRes.json();
         }
@@ -201,7 +220,7 @@ root
       }
 
       try {
-        const meRes = await fetch('/api/v1/me');
+        const meRes = await api('/api/v1/me');
         if (meRes.ok) {
           const user = await meRes.json();
           document.getElementById('userGreeting').innerText = `👤 ${user.username || user.userId || 'User'}`;
@@ -234,14 +253,10 @@ root
       const errorDiv = document.getElementById('loginError');
       errorDiv.style.display = 'none';
 
-      const headers = { 'Content-Type': 'application/json' };
-      const xsrf = getCookie('XSRF-TOKEN');
-      if (xsrf) headers['X-XSRF-TOKEN'] = xsrf;
-
       try {
-        const res = await fetch('/api/v1/auth/login', {
+        const res = await api('/api/v1/auth/login', {
           method: 'POST',
-          headers: headers,
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ username, password })
         });
 
@@ -258,11 +273,7 @@ root
     }
 
     async function handleLogout() {
-      const headers = {};
-      const xsrf = getCookie('XSRF-TOKEN');
-      if (xsrf) headers['X-XSRF-TOKEN'] = xsrf;
-
-      await fetch('/api/v1/auth/logout', { method: 'POST', headers: headers });
+      await api('/api/v1/auth/logout', { method: 'POST' });
       window.location.reload();
     }
 

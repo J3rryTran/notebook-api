@@ -33,19 +33,37 @@ public class AuthController {
     private final LdapAuthenticator ldapAuthenticator;
     private final String kyuubiRestUrl;
     private final HttpClient httpClient;
+    private final org.springframework.core.env.Environment environment;
 
     public AuthController(
             AuthProperties authProperties,
             AuthSessionService sessionService,
             LdapAuthenticator ldapAuthenticator,
-            @Value("${kyuubi.rest-url:http://localhost:10099}") String kyuubiRestUrl) {
+            @Value("${kyuubi.rest-url:http://localhost:10099}") String kyuubiRestUrl,
+            org.springframework.core.env.Environment environment) {
         this.authProperties = authProperties;
         this.sessionService = sessionService;
         this.ldapAuthenticator = ldapAuthenticator;
         this.kyuubiRestUrl = kyuubiRestUrl.replaceAll("/+$", "");
+        this.environment = environment;
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(5))
                 .build();
+    }
+
+    private boolean isDev() {
+        return environment.acceptsProfiles(org.springframework.core.env.Profiles.of("dev"));
+    }
+
+    private void addSessionCookie(HttpServletResponse response, String sessionId, Duration maxAge) {
+        org.springframework.http.ResponseCookie cookie = org.springframework.http.ResponseCookie.from(SessionCookieFilter.COOKIE_NAME, sessionId)
+                .httpOnly(true)
+                .secure(!isDev())
+                .sameSite("Strict")
+                .path("/")
+                .maxAge(maxAge)
+                .build();
+        response.addHeader(org.springframework.http.HttpHeaders.SET_COOKIE, cookie.toString());
     }
 
     @PostMapping("/login")
@@ -58,8 +76,8 @@ public class AuthController {
             throw new NotebookApiException("METHOD_NOT_ALLOWED", "Login endpoint is disabled in OIDC mode", HttpStatus.METHOD_NOT_ALLOWED);
         }
 
-        String username = body.get("username");
-        String password = body.get("password");
+        String username = body != null ? body.get("username") : null;
+        String password = body != null ? body.get("password") : null;
         if (username == null || username.isBlank() || password == null || password.isBlank()) {
             throw new NotebookApiException("INVALID_CREDENTIALS", "Username and password are required", HttpStatus.UNAUTHORIZED);
         }
@@ -86,12 +104,12 @@ public class AuthController {
                 } else if (resp.statusCode() == 401 || resp.statusCode() == 403) {
                     throw new NotebookApiException("INVALID_CREDENTIALS", "Invalid credentials", HttpStatus.UNAUTHORIZED);
                 } else {
-                    throw new NotebookApiException("AUTH_BACKEND_UNAVAILABLE", "Kyuubi returned status " + resp.statusCode(), HttpStatus.SERVICE_UNAVAILABLE);
+                    throw new NotebookApiException("AUTH_BACKEND_UNAVAILABLE", "Failed to contact Kyuubi", HttpStatus.SERVICE_UNAVAILABLE);
                 }
             } catch (NotebookApiException ex) {
                 throw ex;
             } catch (Exception ex) {
-                throw new NotebookApiException("AUTH_BACKEND_UNAVAILABLE", "Failed to contact Kyuubi: " + ex.getMessage(), HttpStatus.SERVICE_UNAVAILABLE);
+                throw new NotebookApiException("AUTH_BACKEND_UNAVAILABLE", "Failed to contact Kyuubi", HttpStatus.SERVICE_UNAVAILABLE);
             }
         } else if (mode == AuthMode.LDAP) {
             LdapAuthenticator.LdapUser ldapUser = ldapAuthenticator.authenticate(username, password);
@@ -103,11 +121,7 @@ public class AuthController {
 
         NotebookAuthSession session = sessionService.createSession(authUser, password, mode.getValue(), isAdmin);
 
-        Cookie cookie = new Cookie(SessionCookieFilter.COOKIE_NAME, session.getId());
-        cookie.setHttpOnly(true);
-        cookie.setPath("/");
-        cookie.setMaxAge((int) Duration.parse("PT" + authProperties.getSessionTtl()).toSeconds());
-        response.addCookie(cookie);
+        addSessionCookie(response, session.getId(), authProperties.getSessionTtl());
 
         return ResponseEntity.ok(Map.of("user", authUser));
     }
@@ -127,11 +141,7 @@ public class AuthController {
             for (Cookie c : cookies) {
                 if (SessionCookieFilter.COOKIE_NAME.equals(c.getName())) {
                     sessionService.deleteSession(c.getValue());
-                    Cookie clearCookie = new Cookie(SessionCookieFilter.COOKIE_NAME, "");
-                    clearCookie.setHttpOnly(true);
-                    clearCookie.setPath("/");
-                    clearCookie.setMaxAge(0);
-                    response.addCookie(clearCookie);
+                    addSessionCookie(response, "", Duration.ZERO);
                     break;
                 }
             }

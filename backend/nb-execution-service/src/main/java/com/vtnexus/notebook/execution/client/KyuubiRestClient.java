@@ -59,7 +59,7 @@ public class KyuubiRestClient {
         if (userAuthHeader != null && !userAuthHeader.isBlank()) {
             return userAuthHeader;
         }
-        return com.vtnexus.notebook.common.auth.KyuubiCredentialHolder.getAuthHeader();
+        throw new IllegalStateException("Authentication header is required for Kyuubi REST client calls");
     }
 
     private String getBaseUrl(String instance) {
@@ -103,9 +103,11 @@ public class KyuubiRestClient {
 
         } catch (HttpStatusCodeException ex) {
             handleHttpStatusException(ex);
-            throw new NotebookApiException("KYUUBI_ERROR", ex.getResponseBodyAsString(), HttpStatus.BAD_GATEWAY);
+            log.warn("Kyuubi open session error: {}", ex.getResponseBodyAsString());
+            throw new NotebookApiException("KYUUBI_ERROR", "Failed to open Kyuubi session", HttpStatus.BAD_GATEWAY);
         } catch (ResourceAccessException ex) {
-            throw new NotebookApiException("KYUUBI_UNAVAILABLE", "Cannot connect to Kyuubi: " + ex.getMessage(), HttpStatus.SERVICE_UNAVAILABLE, true, null);
+            log.warn("Cannot connect to Kyuubi: {}", ex.getMessage());
+            throw new NotebookApiException("KYUUBI_UNAVAILABLE", "Kyuubi unavailable", HttpStatus.SERVICE_UNAVAILABLE, true, null);
         }
     }
 
@@ -137,9 +139,11 @@ public class KyuubiRestClient {
 
         } catch (HttpStatusCodeException ex) {
             handleHttpStatusException(ex);
-            throw new NotebookApiException("KYUUBI_ERROR", ex.getResponseBodyAsString(), HttpStatus.BAD_GATEWAY);
+            log.warn("Kyuubi submit statement error: {}", ex.getResponseBodyAsString());
+            throw new NotebookApiException("KYUUBI_ERROR", "Failed to submit statement to Kyuubi", HttpStatus.BAD_GATEWAY);
         } catch (ResourceAccessException ex) {
-            throw new NotebookApiException("KYUUBI_UNAVAILABLE", "Kyuubi unavailable: " + ex.getMessage(), HttpStatus.SERVICE_UNAVAILABLE, true, null);
+            log.warn("Kyuubi unavailable on submit statement: {}", ex.getMessage());
+            throw new NotebookApiException("KYUUBI_UNAVAILABLE", "Kyuubi unavailable", HttpStatus.SERVICE_UNAVAILABLE, true, null);
         }
     }
 
@@ -158,8 +162,10 @@ public class KyuubiRestClient {
                 throw new NotebookApiException("RUNTIME_LOST", "Operation not found on Kyuubi engine", HttpStatus.CONFLICT);
             }
             handleHttpStatusException(ex);
-            throw new NotebookApiException("KYUUBI_ERROR", ex.getMessage(), HttpStatus.BAD_GATEWAY);
+            log.warn("Kyuubi get operation event error: {}", ex.getResponseBodyAsString());
+            throw new NotebookApiException("KYUUBI_ERROR", "Failed to check operation status on Kyuubi", HttpStatus.BAD_GATEWAY);
         } catch (ResourceAccessException ex) {
+            log.warn("Kyuubi connection error on get operation event: {}", ex.getMessage());
             throw new NotebookApiException("KYUUBI_UNAVAILABLE", "Kyuubi connection error", HttpStatus.SERVICE_UNAVAILABLE, true, null);
         }
     }
@@ -180,9 +186,11 @@ public class KyuubiRestClient {
             return body;
         } catch (HttpStatusCodeException ex) {
             handleHttpStatusException(ex);
-            throw new NotebookApiException("KYUUBI_ERROR", "Failed to fetch rowset: " + ex.getMessage(), HttpStatus.BAD_GATEWAY);
+            log.warn("Failed to fetch rowset: {}", ex.getResponseBodyAsString());
+            throw new NotebookApiException("KYUUBI_ERROR", "Failed to fetch rowset from Kyuubi", HttpStatus.BAD_GATEWAY);
         } catch (ResourceAccessException ex) {
-            throw new NotebookApiException("KYUUBI_UNAVAILABLE", "Kyuubi unavailable: " + ex.getMessage(), HttpStatus.SERVICE_UNAVAILABLE, true, null);
+            log.warn("Kyuubi unavailable on fetch rowset: {}", ex.getMessage());
+            throw new NotebookApiException("KYUUBI_UNAVAILABLE", "Kyuubi unavailable", HttpStatus.SERVICE_UNAVAILABLE, true, null);
         }
     }
 
