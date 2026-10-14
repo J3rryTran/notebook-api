@@ -182,15 +182,37 @@ root
     </div>
   </div>
 
+  <script src="/vendor/oidc-client-ts.min.js"></script>
   <script>
     let authConfig = { mode: "oidc" };
+    let userManager = null;
 
     function getCookie(name) {
       const v = document.cookie.match('(^|;) ?' + name + '=([^;]*)(;|$)');
       return v ? v[2] : null;
     }
 
-    async function api(path, opts = {}) {
+    function initOidcUserManager() {
+      if (!window.oidc || !authConfig || authConfig.mode !== 'oidc') return null;
+      if (!userManager && authConfig.issuer && authConfig.clientId) {
+        const scopes = Array.isArray(authConfig.scopes) && authConfig.scopes.length > 0
+          ? authConfig.scopes.join(' ')
+          : 'openid profile';
+
+        userManager = new oidc.UserManager({
+          authority: authConfig.issuer,
+          client_id: authConfig.clientId,
+          redirect_uri: window.location.origin + (authConfig.redirectUri || '/auth/callback'),
+          response_type: 'code',
+          scope: scopes,
+          automaticSilentRenew: true,
+          userStore: new oidc.WebStorageStateStore({ store: window.sessionStorage })
+        });
+      }
+      return userManager;
+    }
+
+    async function api(path, opts = {}, retryOn401 = true) {
       const options = { ...opts };
       options.headers = { ...(options.headers || {}) };
 
@@ -206,12 +228,41 @@ root
         options.headers['Authorization'] = `Bearer ${window.currentUser.access_token}`;
       }
 
-      return fetch(path, options);
+      let res = await fetch(path, options);
+
+      // Xử lý 401 khi ở mode oidc
+      if (res.status === 401 && authConfig.mode === 'oidc' && retryOn401 && userManager) {
+        try {
+          const renewedUser = await userManager.signinSilent();
+          if (renewedUser) {
+            window.currentUser = renewedUser;
+            options.headers['Authorization'] = `Bearer ${renewedUser.access_token}`;
+            return await fetch(path, options);
+          }
+        } catch (silentErr) {
+          console.warn("signinSilent failed:", silentErr);
+        }
+
+        // Chống lặp vô hạn redirect
+        if (!sessionStorage.getItem('oidc_redirect_attempt')) {
+          sessionStorage.setItem('oidc_redirect_attempt', '1');
+          await userManager.signinRedirect();
+        } else {
+          console.error("Authentication failed: oidc_redirect_attempt already set");
+          document.getElementById('loginTitle').innerText = 'Đăng nhập OIDC không thành công';
+          const errEl = document.getElementById('loginError');
+          errEl.innerText = 'Phiên đăng nhập hết hạn hoặc không hợp lệ. Vui lòng tải lại trang để thử lại.';
+          errEl.style.display = 'block';
+          document.getElementById('loginModal').style.display = 'flex';
+        }
+      }
+
+      return res;
     }
 
     async function checkAuthStatus() {
       try {
-        const confRes = await api('/api/v1/auth/config');
+        const confRes = await api('/api/v1/auth/config', {}, false);
         if (confRes.ok) {
           authConfig = await confRes.json();
         }
@@ -219,22 +270,59 @@ root
         console.warn("Không thể tải /auth/config:", e);
       }
 
+      if (authConfig.mode === 'oidc') {
+        initOidcUserManager();
+
+        // Xử lý /auth/callback
+        if (window.location.pathname === '/auth/callback' && userManager) {
+          try {
+            const user = await userManager.signinRedirectCallback();
+            window.currentUser = user;
+            sessionStorage.removeItem('oidc_redirect_attempt');
+            window.history.replaceState({}, document.title, '/');
+          } catch (cbErr) {
+            console.error("Lỗi xử lý callback OIDC:", cbErr);
+            document.getElementById('loginTitle').innerText = 'Lỗi xác thực OIDC';
+            const errEl = document.getElementById('loginError');
+            errEl.innerText = 'Không thể hoàn tất đăng nhập OIDC: ' + (cbErr.message || cbErr);
+            errEl.style.display = 'block';
+            document.getElementById('loginModal').style.display = 'flex';
+            return;
+          }
+        }
+
+        // Đọc user hiện tại từ storage nếu có
+        if (userManager && !window.currentUser) {
+          try {
+            const storedUser = await userManager.getUser();
+            if (storedUser && !storedUser.expired) {
+              window.currentUser = storedUser;
+            }
+          } catch (e) {
+            console.warn("Không thể đọc user từ storage:", e);
+          }
+        }
+      }
+
       try {
-        const meRes = await api('/api/v1/me');
+        const meRes = await api('/api/v1/me', {}, false);
         if (meRes.ok) {
+          sessionStorage.removeItem('oidc_redirect_attempt');
           const user = await meRes.json();
           document.getElementById('userGreeting').innerText = `👤 ${user.username || user.userId || 'User'}`;
-          if (authConfig.mode !== 'oidc') {
-            document.getElementById('logoutBtn').style.display = 'inline-flex';
-          }
+          document.getElementById('logoutBtn').style.display = 'inline-flex';
           document.getElementById('loginModal').style.display = 'none';
         } else if (meRes.status === 401) {
-          if (authConfig.mode === 'oidc') {
-            // OIDC redirect
-            if (authConfig.issuer && authConfig.clientId) {
-              const redirectUri = window.location.origin + (authConfig.redirectPath || '/auth/callback');
-              const authUrl = `${authConfig.issuer}/protocol/openid-connect/auth?client_id=${authConfig.clientId}&response_type=code&scope=openid%20profile&redirect_uri=${encodeURIComponent(redirectUri)}`;
-              window.location.href = authUrl;
+          if (authConfig.mode === 'oidc' && userManager) {
+            if (!sessionStorage.getItem('oidc_redirect_attempt')) {
+              sessionStorage.setItem('oidc_redirect_attempt', '1');
+              await userManager.signinRedirect();
+            } else {
+              document.getElementById('loginTitle').innerText = 'Đăng nhập OIDC không thành công';
+              const errEl = document.getElementById('loginError');
+              errEl.innerText = 'Phiên đăng nhập hết hạn hoặc không hợp lệ. Vui lòng tải lại trang để thử lại.';
+              errEl.style.display = 'block';
+              document.getElementById('loginModal').style.display = 'flex';
             }
           } else {
             // no-oidc hoặc ldap: hiển thị modal form đăng nhập
@@ -258,12 +346,13 @@ root
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ username, password })
-        });
+        }, false);
 
         if (res.ok) {
           document.getElementById('loginModal').style.display = 'none';
           checkAuthStatus();
         } else {
+          errorDiv.innerText = 'Đăng nhập thất bại. Vui lòng kiểm tra lại.';
           errorDiv.style.display = 'block';
         }
       } catch (e) {
@@ -273,8 +362,13 @@ root
     }
 
     async function handleLogout() {
-      await api('/api/v1/auth/logout', { method: 'POST' });
-      window.location.reload();
+      if (authConfig.mode === 'oidc' && userManager) {
+        sessionStorage.removeItem('oidc_redirect_attempt');
+        await userManager.signoutRedirect();
+      } else {
+        await api('/api/v1/auth/logout', { method: 'POST' }, false);
+        window.location.reload();
+      }
     }
 
     window.addEventListener('DOMContentLoaded', checkAuthStatus);
