@@ -17,11 +17,16 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 import java.util.List;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class BearerFilter extends OncePerRequestFilter {
 
+    private static final Logger log = LoggerFactory.getLogger(BearerFilter.class);
+
     private final BearerDelegationAuthenticator authenticator;
     private final ObjectMapper objectMapper;
+
 
     public BearerFilter(BearerDelegationAuthenticator authenticator, ObjectMapper objectMapper) {
         this.authenticator = authenticator;
@@ -68,8 +73,11 @@ public class BearerFilter extends OncePerRequestFilter {
         } catch (NotebookApiException ex) {
             writeError(response, ex.getStatus(), ex.getCode(), ex.getMessage());
         } catch (Exception ex) {
-            writeError(response, HttpStatus.INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", "Authentication error: " + ex.getMessage());
+            String reqId = request.getHeader("X-Request-Id");
+            log.warn("Internal authentication error [reqId={}]: {}", reqId, ex.getMessage());
+            writeError(response, HttpStatus.INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", "Authentication error");
         } finally {
+
             KyuubiCredentialHolder.clear();
             SecurityContextHolder.clearContext();
         }

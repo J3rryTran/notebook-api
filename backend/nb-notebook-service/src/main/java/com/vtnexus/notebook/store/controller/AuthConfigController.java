@@ -26,16 +26,17 @@ public class AuthConfigController {
         resp.put("mode", mode);
 
         if ("oidc".equalsIgnoreCase(mode)) {
-            resp.put("verified", !authProperties.isAllowUnverified());
+            resp.put("verified", authProperties.isEffectiveVerified());
             resp.put("issuer", authProperties.getOidc().getIssuer());
             resp.put("clientId", authProperties.getOidc().getClientId());
             resp.put("scopes", authProperties.getOidc().getScopes());
             resp.put("redirectUri", "/auth/callback");
         } else if ("no-oidc".equalsIgnoreCase(mode)) {
-            resp.put("verified", !authProperties.isAllowUnverified());
+            resp.put("verified", authProperties.isEffectiveVerified());
         } else if ("ldap".equalsIgnoreCase(mode)) {
             resp.put("verified", true);
         }
+
 
         return ResponseEntity.ok(resp);
     }

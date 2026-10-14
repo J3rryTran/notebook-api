@@ -23,4 +23,11 @@ public interface NotebookCellRunRepository extends JpaRepository<NotebookCellRun
 
     @Query("SELECT c FROM NotebookCellRun c JOIN NotebookRun r ON c.notebookRunId = r.id WHERE r.notebookId = :notebookId AND c.cellId = :cellId AND r.triggeredBy = :user ORDER BY c.startedAt DESC")
     List<NotebookCellRun> findLatestByNotebookAndCellAndUser(@Param("notebookId") String notebookId, @Param("cellId") String cellId, @Param("user") String user, Pageable pageable);
+
+    @Query("SELECT c FROM NotebookCellRun c JOIN NotebookRun r ON c.notebookRunId = r.id WHERE r.kyuubiSessionRef = :sessionId AND c.status IN ('PENDING', 'RUNNING')")
+    List<NotebookCellRun> findRunningBySessionId(@Param("sessionId") String sessionId);
+
+    @Query("SELECT COUNT(c) FROM NotebookCellRun c JOIN NotebookRun r ON c.notebookRunId = r.id WHERE r.triggeredBy = :user AND c.status = :status")
+    long countByUserAndStatus(@Param("user") String user, @Param("status") String status);
 }
+

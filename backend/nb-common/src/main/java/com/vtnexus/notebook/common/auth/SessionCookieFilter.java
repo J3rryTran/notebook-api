@@ -18,10 +18,15 @@ import org.springframework.web.filter.OncePerRequestFilter;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class SessionCookieFilter extends OncePerRequestFilter {
 
+    private static final Logger log = LoggerFactory.getLogger(SessionCookieFilter.class);
+
     public static final String COOKIE_NAME = "NB_SESSION";
+
 
     private final SessionResolver sessionResolver;
     private final ObjectMapper objectMapper;
@@ -73,8 +78,11 @@ public class SessionCookieFilter extends OncePerRequestFilter {
         } catch (NotebookApiException ex) {
             writeError(response, ex.getStatus(), ex.getCode(), ex.getMessage());
         } catch (Exception ex) {
-            writeError(response, HttpStatus.UNAUTHORIZED, "UNAUTHENTICATED", "Session resolution failed: " + ex.getMessage());
+            String reqId = request.getHeader("X-Request-Id");
+            log.warn("Session resolution failed [reqId={}]: {}", reqId, ex.getMessage());
+            writeError(response, HttpStatus.UNAUTHORIZED, "UNAUTHENTICATED", "Session resolution failed");
         } finally {
+
             KyuubiCredentialHolder.clear();
             SecurityContextHolder.clearContext();
         }

@@ -23,23 +23,35 @@ public class NotebookExecutionController {
     private final NotebookKyuubiSessionRepository sessionRepository;
     private final NotebookCellRunRepository cellRunRepository;
 
-    public NotebookExecutionController(
-            ExecutionService executionService,
-            NotebookKyuubiSessionRepository sessionRepository,
-            NotebookCellRunRepository cellRunRepository) {
-        this.executionService = executionService;
-        this.sessionRepository = sessionRepository;
-        this.cellRunRepository = cellRunRepository;
-    }
+
 
     @PostMapping("/notebooks/{notebookId}/sessions")
-    public ResponseEntity<NotebookKyuubiSession> getOrCreateSession(
+    public ResponseEntity<Map<String, Object>> getOrCreateSession(
             @PathVariable("notebookId") String notebookId,
+            @RequestBody(required = false) Map<String, Object> body,
             @AuthenticationPrincipal Object principal,
             HttpServletRequest request) {
         String auth = request.getHeader(HttpHeaders.AUTHORIZATION);
-        return ResponseEntity.ok(executionService.getOrCreateSession(notebookId, principal.toString(), auth));
+
+        Map<String, String> configs = null;
+        if (body != null && body.containsKey("configs") && body.get("configs") instanceof Map<?, ?> map) {
+            configs = new HashMap<>();
+            for (Map.Entry<?, ?> e : map.entrySet()) {
+                if (e.getKey() != null && e.getValue() != null) {
+                    configs.put(e.getKey().toString(), e.getValue().toString());
+                }
+            }
+        }
+
+        ExecutionService.SessionCreationResult result = executionService.getOrCreateSession(
+                notebookId, principal.toString(), auth, configs);
+
+        Map<String, Object> resp = new HashMap<>();
+        resp.put("session", result.session());
+        resp.put("warnings", result.warnings());
+        return ResponseEntity.ok(resp);
     }
+
 
     @PostMapping("/notebook-sessions/{sessionId}/executions")
     public ResponseEntity<NotebookExecutionDto> submitExecution(
@@ -61,6 +73,31 @@ public class NotebookExecutionController {
         return ResponseEntity.ok(executionService.syncAndGetExecution(executionId, principal.toString(), auth));
     }
 
+    private final com.vtnexus.notebook.execution.client.KyuubiRestClient kyuubiRestClient;
+    private final org.springframework.core.task.AsyncTaskExecutor eventsTaskExecutor;
+    private final com.fasterxml.jackson.databind.ObjectMapper objectMapper;
+    private final javax.sql.DataSource dataSource;
+
+    private volatile Boolean cachedKyuubiPing = null;
+    private volatile long lastKyuubiPingTime = 0;
+
+    public NotebookExecutionController(
+            ExecutionService executionService,
+            NotebookKyuubiSessionRepository sessionRepository,
+            NotebookCellRunRepository cellRunRepository,
+            com.vtnexus.notebook.execution.client.KyuubiRestClient kyuubiRestClient,
+            @org.springframework.beans.factory.annotation.Qualifier("eventsTaskExecutor") org.springframework.core.task.AsyncTaskExecutor eventsTaskExecutor,
+            com.fasterxml.jackson.databind.ObjectMapper objectMapper,
+            javax.sql.DataSource dataSource) {
+        this.executionService = executionService;
+        this.sessionRepository = sessionRepository;
+        this.cellRunRepository = cellRunRepository;
+        this.kyuubiRestClient = kyuubiRestClient;
+        this.eventsTaskExecutor = eventsTaskExecutor;
+        this.objectMapper = objectMapper;
+        this.dataSource = dataSource;
+    }
+
     @GetMapping("/executions/{executionId}/events")
     public DeferredResult<ResponseEntity<Map<String, Object>>> getExecutionEvents(
             @PathVariable("executionId") String executionId,
@@ -73,18 +110,51 @@ public class NotebookExecutionController {
         String auth = request.getHeader(HttpHeaders.AUTHORIZATION);
 
         deferred.onTimeout(() -> {
-            deferred.setResult(ResponseEntity.ok(Map.of("timeout", true)));
+            deferred.setResult(ResponseEntity.noContent().build());
         });
 
-        ForkJoinPool.commonPool().submit(() -> {
+        eventsTaskExecutor.execute(() -> {
+            long startTime = System.currentTimeMillis();
+            String lastStatus = null;
             try {
-                NotebookExecutionDto exec = executionService.syncAndGetExecution(executionId, principal.toString(), auth);
-                deferred.setResult(ResponseEntity.ok(Map.of(
-                        "executionId", exec.getId(),
-                        "status", exec.getStatus()
-                )));
+                while (!deferred.isSetOrExpired()) {
+                    NotebookExecutionDto exec = executionService.syncAndGetExecution(executionId, principal.toString(), auth);
+                    String currentStatus = exec.getStatus();
+                    if (lastStatus != null && !lastStatus.equals(currentStatus)) {
+                        deferred.setResult(ResponseEntity.ok(Map.of(
+                                "executionId", exec.getId(),
+                                "status", currentStatus
+                        )));
+                        return;
+                    }
+                    lastStatus = currentStatus;
+
+                    if (!"PENDING".equals(currentStatus) && !"RUNNING".equals(currentStatus)) {
+                        deferred.setResult(ResponseEntity.ok(Map.of(
+                                "executionId", exec.getId(),
+                                "status", currentStatus
+                        )));
+                        return;
+                    }
+
+                    if (System.currentTimeMillis() - startTime >= timeout - 100) {
+                        break;
+                    }
+
+                    try {
+                        Thread.sleep(500);
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        break;
+                    }
+                }
+                if (!deferred.isSetOrExpired()) {
+                    deferred.setResult(ResponseEntity.noContent().build());
+                }
             } catch (Exception ex) {
-                deferred.setErrorResult(ex);
+                if (!deferred.isSetOrExpired()) {
+                    deferred.setErrorResult(ex);
+                }
             }
         });
 
@@ -129,7 +199,7 @@ public class NotebookExecutionController {
             HttpServletRequest request) {
         String auth = request.getHeader(HttpHeaders.AUTHORIZATION);
         executionService.syncAndGetExecution(executionId, principal.toString(), auth);
-        String logs = executionService.getExecutionLogs(executionId);
+        String logs = executionService.getExecutionLogs(executionId, afterSequence);
         return ResponseEntity.ok(Map.of(
                 "executionId", executionId,
                 "logs", logs
@@ -145,7 +215,35 @@ public class NotebookExecutionController {
             HttpServletRequest request) {
         String auth = request.getHeader(HttpHeaders.AUTHORIZATION);
         NotebookExecutionDto exec = executionService.syncAndGetExecution(executionId, principal.toString(), auth);
-        return ResponseEntity.ok(exec.getResultOutput() != null ? exec.getResultOutput() : "[]");
+        String outputJson = exec.getResultOutput();
+        if (outputJson == null || outputJson.isBlank()) {
+            return ResponseEntity.ok("[]");
+        }
+
+        try {
+            com.fasterxml.jackson.databind.JsonNode root = objectMapper.readTree(outputJson);
+            com.fasterxml.jackson.databind.JsonNode rowsNode = root.at("/data/application~1vnd.notebook.table+json/rows");
+            if (rowsNode.isArray()) {
+                com.fasterxml.jackson.databind.node.ArrayNode rows = (com.fasterxml.jackson.databind.node.ArrayNode) rowsNode;
+                int total = rows.size();
+                int from = Math.min(Math.max(offset, 0), total);
+                int to = Math.min(from + Math.max(limit, 0), total);
+
+                com.fasterxml.jackson.databind.node.ArrayNode slicedRows = objectMapper.createArrayNode();
+                for (int i = from; i < to; i++) {
+                    slicedRows.add(rows.get(i));
+                }
+
+                com.fasterxml.jackson.databind.node.ObjectNode copy = root.deepCopy();
+                com.fasterxml.jackson.databind.JsonNode tableNode = copy.at("/data/application~1vnd.notebook.table+json");
+                if (tableNode.isObject()) {
+                    ((com.fasterxml.jackson.databind.node.ObjectNode) tableNode).set("rows", slicedRows);
+                }
+                return ResponseEntity.ok(objectMapper.writeValueAsString(copy));
+            }
+        } catch (Exception ignored) {}
+
+        return ResponseEntity.ok(outputJson);
     }
 
     @DeleteMapping("/notebook-sessions/{sessionId}")
@@ -153,11 +251,8 @@ public class NotebookExecutionController {
             @PathVariable("sessionId") String sessionId,
             @AuthenticationPrincipal Object principal,
             HttpServletRequest request) {
-        NotebookKyuubiSession session = sessionRepository.findById(sessionId).orElse(null);
-        if (session != null && session.getUserId().equals(principal.toString())) {
-            session.setStatus("CLOSED");
-            sessionRepository.save(session);
-        }
+        String auth = request.getHeader(HttpHeaders.AUTHORIZATION);
+        executionService.closeSession(sessionId, principal.toString(), auth);
         return ResponseEntity.noContent().build();
     }
 
@@ -183,7 +278,7 @@ public class NotebookExecutionController {
             @AuthenticationPrincipal Object principal,
             HttpServletRequest request) {
         String auth = request.getHeader(HttpHeaders.AUTHORIZATION);
-        executionService.cancelExecution(runtimeId, principal.toString(), auth);
+        executionService.interruptSession(runtimeId, principal.toString(), auth);
         return ResponseEntity.noContent().build();
     }
 
@@ -203,18 +298,44 @@ public class NotebookExecutionController {
     }
 
     @GetMapping("/notebook-status")
-    public ResponseEntity<Map<String, Object>> getNotebookStatus() {
-        long activeSessions = sessionRepository.count();
-        long runningExecutions = cellRunRepository.count();
+    public ResponseEntity<Map<String, Object>> getNotebookStatus(
+            @AuthenticationPrincipal Object principal,
+            HttpServletRequest request) {
+        String user = principal != null ? principal.toString() : "anonymous";
+        String auth = request.getHeader(HttpHeaders.AUTHORIZATION);
+
+        // 1. Kiểm tra kyuubi /ping cache 10s
+        long now = System.currentTimeMillis();
+        boolean kyuubiOk;
+        if (cachedKyuubiPing != null && (now - lastKyuubiPingTime < 10000)) {
+            kyuubiOk = cachedKyuubiPing;
+        } else {
+            kyuubiOk = kyuubiRestClient.ping(auth);
+            cachedKyuubiPing = kyuubiOk;
+            lastKyuubiPingTime = now;
+        }
+
+        // 2. Persistence check SELECT 1
+        boolean persistenceOk = false;
+        try (java.sql.Connection conn = dataSource.getConnection();
+             java.sql.Statement stmt = conn.createStatement()) {
+            stmt.execute("SELECT 1");
+            persistenceOk = true;
+        } catch (Exception ignored) {}
+
+        // 3. Active / queued runs theo user
+        long activeCount = cellRunRepository.countByUserAndStatus(user, "RUNNING");
+        long queuedCount = cellRunRepository.countByUserAndStatus(user, "PENDING");
+        long userSessions = sessionRepository.count();
 
         Map<String, Object> resp = new HashMap<>();
-        resp.put("notebookService", "HEALTHY");
-        resp.put("persistence", "HEALTHY");
-        resp.put("kyuubiSql", "HEALTHY");
-        resp.put("pythonRuntimeManager", "HEALTHY");
-        resp.put("activeSessions", activeSessions);
-        resp.put("activeRuntimes", activeSessions);
-        resp.put("queuedExecutions", runningExecutions);
+        resp.put("kyuubi", kyuubiOk ? "HEALTHY" : "UNHEALTHY");
+        resp.put("persistence", persistenceOk ? "HEALTHY" : "UNHEALTHY");
+        resp.put("active", activeCount);
+        resp.put("queued", queuedCount);
+        resp.put("activeSessions", userSessions);
+
         return ResponseEntity.ok(resp);
     }
 }
+

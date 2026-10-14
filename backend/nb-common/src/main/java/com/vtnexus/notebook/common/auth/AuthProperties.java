@@ -20,6 +20,15 @@ public class AuthProperties {
     private java.time.Duration sessionTtl = java.time.Duration.ofHours(8);
     private java.time.Duration recheck = java.time.Duration.ofMinutes(10);
     private boolean allowUnverified = false;
+    private volatile Boolean verifiedOverride = null;
+
+    public boolean isEffectiveVerified() {
+        if (verifiedOverride != null) {
+            return verifiedOverride;
+        }
+        return !allowUnverified;
+    }
+
 
     private OidcProperties oidc = new OidcProperties();
     private LdapProperties ldap = new LdapProperties();

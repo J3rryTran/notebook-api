@@ -65,20 +65,35 @@ public class ExecutionService {
         this.maxRows = maxRows;
     }
 
-    public NotebookKyuubiSession getOrCreateSession(String notebookId, String user, String authHeader) {
+    public record SessionCreationResult(NotebookKyuubiSession session, List<String> warnings) {}
+
+    public SessionCreationResult getOrCreateSession(String notebookId, String user, String authHeader, Map<String, String> configs) {
         if (!documentServiceClient.canExecute(notebookId, user)) {
             throw new NotebookApiException("ACCESS_DENIED", "Requires RUNNER role or higher to open execution session", HttpStatus.FORBIDDEN);
+        }
+
+        List<String> warnings = new ArrayList<>();
+        Map<String, String> validConfigs = new HashMap<>();
+        if (configs != null) {
+            List<String> allowedKeys = kyuubiRestClient.getAllowedSessionConfigKeys();
+            for (Map.Entry<String, String> e : configs.entrySet()) {
+                if (allowedKeys.contains(e.getKey())) {
+                    validConfigs.put(e.getKey(), e.getValue());
+                } else {
+                    warnings.add("Config key '" + e.getKey() + "' is not allowed and has been ignored");
+                }
+            }
         }
 
         // C9: Chỉ dùng lại session READY/BUSY
         Optional<NotebookKyuubiSession> existing = sessionRepository
                 .findFirstByNotebookIdAndUserIdAndStatusInOrderByCreatedAtDesc(notebookId, user, List.of("READY", "BUSY"));
         if (existing.isPresent()) {
-            return existing.get();
+            return new SessionCreationResult(existing.get(), warnings);
         }
 
         // Mở session mới trên Kyuubi (ngoài transaction)
-        Map<String, String> kSession = kyuubiRestClient.openSession(authHeader, null);
+        Map<String, String> kSession = kyuubiRestClient.openSession(authHeader, validConfigs);
 
         NotebookKyuubiSession session = NotebookKyuubiSession.builder()
                 .id(UUID.randomUUID().toString())
@@ -91,8 +106,14 @@ public class ExecutionService {
                 .lastUsedAt(Instant.now())
                 .build();
 
-        return transactionTemplate.execute(status -> sessionRepository.save(session));
+        NotebookKyuubiSession saved = transactionTemplate.execute(status -> sessionRepository.save(session));
+        return new SessionCreationResult(saved, warnings);
     }
+
+    public NotebookKyuubiSession getOrCreateSession(String notebookId, String user, String authHeader) {
+        return getOrCreateSession(notebookId, user, authHeader, null).session();
+    }
+
 
     /**
      * Vòng đời submit 2 pha (B6, C10):
@@ -639,7 +660,39 @@ public class ExecutionService {
         });
     }
 
+    public void closeSession(String sessionId, String user, String authHeader) {
+        NotebookKyuubiSession session = sessionRepository.findById(sessionId).orElse(null);
+        if (session != null && session.getUserId().equals(user)) {
+            if (session.getKyuubiSessionId() != null) {
+                try {
+                    kyuubiRestClient.closeSession(session.getKyuubiSessionId(), session.getKyuubiInstance(), authHeader);
+                } catch (Exception ignored) {}
+            }
+            transactionTemplate.executeWithoutResult(status -> {
+                NotebookKyuubiSession s = sessionRepository.findByIdForUpdate(sessionId).orElse(session);
+                s.setStatus("CLOSED");
+                sessionRepository.save(s);
+            });
+        }
+    }
+
+    public void interruptSession(String sessionId, String user, String authHeader) {
+        NotebookKyuubiSession session = sessionRepository.findById(sessionId)
+                .orElseThrow(() -> new NotebookApiException("NOTEBOOK_SESSION_NOT_FOUND", "Session not found", HttpStatus.NOT_FOUND));
+
+        if (!session.getUserId().equals(user)) {
+            throw new NotebookApiException("NOTEBOOK_SESSION_NOT_FOUND", "Session not found", HttpStatus.NOT_FOUND);
+        }
+
+        // Tìm cell-run RUNNING hoặc PENDING của session đó rồi hủy
+        List<NotebookCellRun> runningCellRuns = cellRunRepository.findRunningBySessionId(sessionId);
+        for (NotebookCellRun cr : runningCellRuns) {
+            cancelExecution(cr.getId(), user, authHeader);
+        }
+    }
+
     public void restartRuntime(String sessionId, String user, String authHeader) {
+
         NotebookKyuubiSession session = sessionRepository.findById(sessionId)
                 .orElseThrow(() -> new NotebookApiException("NOTEBOOK_SESSION_NOT_FOUND", "Session not found", HttpStatus.NOT_FOUND));
 
@@ -677,13 +730,20 @@ public class ExecutionService {
     }
 
     public String getExecutionLogs(String cellRunId) {
-        List<NotebookExecutionLog> logs = logRepository.findByCellRunIdOrderBySequenceAsc(cellRunId);
+        return getExecutionLogs(cellRunId, null);
+    }
+
+    public String getExecutionLogs(String cellRunId, Long afterSequence) {
+        List<NotebookExecutionLog> logs = (afterSequence != null && afterSequence >= 0)
+                ? logRepository.findByCellRunIdAndSequenceGreaterThanOrderBySequenceAsc(cellRunId, afterSequence)
+                : logRepository.findByCellRunIdOrderBySequenceAsc(cellRunId);
         StringBuilder sb = new StringBuilder();
         for (NotebookExecutionLog l : logs) {
             sb.append(l.getLine()).append("\n");
         }
         return sb.toString();
     }
+
 
     private NotebookExecutionDto toDto(NotebookCellRun cellRun, String notebookId, String sessionId, String errorCode, boolean stale) {
         return NotebookExecutionDto.builder()

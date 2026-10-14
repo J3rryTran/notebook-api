@@ -55,6 +55,11 @@ public class KyuubiRestClient {
         this.objectMapper = objectMapper;
     }
 
+    public List<String> getAllowedSessionConfigKeys() {
+        return allowedSessionConfigKeys;
+    }
+
+
     private String resolveAuth(String userAuthHeader) {
         if (userAuthHeader != null && !userAuthHeader.isBlank()) {
             return userAuthHeader;
@@ -78,12 +83,12 @@ public class KyuubiRestClient {
         Map<String, String> configs = new HashMap<>(defaultSessionConfigs);
         if (extraConfigs != null) {
             for (Map.Entry<String, String> e : extraConfigs.entrySet()) {
-                if (!allowedSessionConfigKeys.contains(e.getKey())) {
-                    throw new NotebookApiException("INVALID_REQUEST", "Config key not allowed: " + e.getKey(), HttpStatus.UNPROCESSABLE_ENTITY);
+                if (allowedSessionConfigKeys.contains(e.getKey()) && e.getValue() != null) {
+                    configs.put(e.getKey(), e.getValue());
                 }
-                configs.put(e.getKey(), e.getValue());
             }
         }
+
 
         Map<String, Object> body = Map.of("configs", configs);
 
@@ -256,10 +261,13 @@ public class KyuubiRestClient {
             }
         } catch (HttpStatusCodeException ex) {
             handleHttpStatusException(ex);
-            throw new NotebookApiException("KYUUBI_ERROR", "Kyuubi cancel error: " + ex.getMessage(), HttpStatus.BAD_GATEWAY);
+            log.warn("Kyuubi cancel error: {}", ex.getMessage());
+            throw new NotebookApiException("KYUUBI_ERROR", "Failed to cancel operation on Kyuubi", HttpStatus.BAD_GATEWAY);
         } catch (ResourceAccessException ex) {
+            log.warn("Kyuubi unavailable on cancel: {}", ex.getMessage());
             throw new NotebookApiException("KYUUBI_UNAVAILABLE", "Kyuubi unavailable", HttpStatus.SERVICE_UNAVAILABLE, true, null);
         }
+
     }
 
     public void closeSession(String sessionId, String instance, String userAuthHeader) {
@@ -272,7 +280,20 @@ public class KyuubiRestClient {
         } catch (Exception ignored) {}
     }
 
+    public boolean ping(String userAuthHeader) {
+        try {
+            HttpHeaders headers = new HttpHeaders();
+            if (userAuthHeader != null) headers.set(HttpHeaders.AUTHORIZATION, userAuthHeader);
+            ResponseEntity<String> resp = restTemplate.exchange(
+                    defaultBaseUrl + "/api/v1/ping", HttpMethod.GET, new HttpEntity<>(headers), String.class);
+            return resp.getStatusCode().is2xxSuccessful();
+        } catch (Exception ex) {
+            return false;
+        }
+    }
+
     private void handleHttpStatusException(HttpStatusCodeException ex) {
+
         if (ex.getStatusCode() == HttpStatus.UNAUTHORIZED || ex.getStatusCode() == HttpStatus.FORBIDDEN) {
             throw new NotebookApiException("KYUUBI_AUTH_FAILED", "Kyuubi authentication rejected", HttpStatus.UNAUTHORIZED);
         }
