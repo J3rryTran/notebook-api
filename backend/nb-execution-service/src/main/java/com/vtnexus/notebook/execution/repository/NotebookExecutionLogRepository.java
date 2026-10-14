@@ -10,4 +10,8 @@ import java.util.List;
 public interface NotebookExecutionLogRepository extends JpaRepository<NotebookExecutionLog, Long> {
     List<NotebookExecutionLog> findByCellRunIdOrderBySequenceAsc(String cellRunId);
     List<NotebookExecutionLog> findByCellRunIdAndSequenceGreaterThanOrderBySequenceAsc(String cellRunId, Long sequence);
+
+    @org.springframework.data.jpa.repository.Query("SELECT MAX(l.sequence) FROM NotebookExecutionLog l WHERE l.cellRunId = :cellRunId")
+    Long findMaxSequenceByCellRunId(@org.springframework.data.repository.query.Param("cellRunId") String cellRunId);
 }
+

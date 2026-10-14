@@ -8,20 +8,29 @@ import com.vtnexus.notebook.common.exception.NotebookApiException;
 import com.vtnexus.notebook.execution.client.DocumentServiceClient;
 import com.vtnexus.notebook.execution.client.KyuubiRestClient;
 import com.vtnexus.notebook.execution.dto.NotebookExecutionDto;
-import com.vtnexus.notebook.execution.model.*;
-import com.vtnexus.notebook.execution.repository.*;
+import com.vtnexus.notebook.execution.model.NotebookCellRun;
+import com.vtnexus.notebook.execution.model.NotebookExecutionLog;
+import com.vtnexus.notebook.execution.model.NotebookKyuubiSession;
+import com.vtnexus.notebook.execution.model.NotebookRun;
+import com.vtnexus.notebook.execution.repository.NotebookCellRunRepository;
+import com.vtnexus.notebook.execution.repository.NotebookExecutionLogRepository;
+import com.vtnexus.notebook.execution.repository.NotebookKyuubiSessionRepository;
+import com.vtnexus.notebook.execution.repository.NotebookRunRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Instant;
 import java.util.*;
 
 @Service
-@Transactional
 public class ExecutionService {
+
+    private static final Logger log = LoggerFactory.getLogger(ExecutionService.class);
 
     private final NotebookKyuubiSessionRepository sessionRepository;
     private final NotebookRunRepository runRepository;
@@ -30,6 +39,8 @@ public class ExecutionService {
     private final KyuubiRestClient kyuubiRestClient;
     private final DocumentServiceClient documentServiceClient;
     private final ObjectMapper objectMapper;
+    private final TransactionTemplate transactionTemplate;
+    private final KyuubiResultParser resultParser;
     private final int maxRows;
 
     public ExecutionService(
@@ -40,6 +51,7 @@ public class ExecutionService {
             KyuubiRestClient kyuubiRestClient,
             DocumentServiceClient documentServiceClient,
             ObjectMapper objectMapper,
+            TransactionTemplate transactionTemplate,
             @Value("${notebook.results.max-rows:1000}") int maxRows) {
         this.sessionRepository = sessionRepository;
         this.runRepository = runRepository;
@@ -48,6 +60,8 @@ public class ExecutionService {
         this.kyuubiRestClient = kyuubiRestClient;
         this.documentServiceClient = documentServiceClient;
         this.objectMapper = objectMapper;
+        this.transactionTemplate = transactionTemplate;
+        this.resultParser = new KyuubiResultParser();
         this.maxRows = maxRows;
     }
 
@@ -56,36 +70,50 @@ public class ExecutionService {
             throw new NotebookApiException("ACCESS_DENIED", "Requires RUNNER role or higher to open execution session", HttpStatus.FORBIDDEN);
         }
 
-        return sessionRepository.findByNotebookIdAndUserIdAndStatusNot(notebookId, user, "CLOSED")
-                .orElseGet(() -> {
-                    Map<String, String> kSession = kyuubiRestClient.openSession(authHeader, null);
-                    NotebookKyuubiSession session = NotebookKyuubiSession.builder()
-                            .id(UUID.randomUUID().toString())
-                            .notebookId(notebookId)
-                            .kyuubiSessionId(kSession.get("sessionId"))
-                            .kyuubiInstance(kSession.get("instance"))
-                            .userId(user)
-                            .status("READY")
-                            .executionCountSeq(0)
-                            .lastUsedAt(Instant.now())
-                            .build();
-                    return sessionRepository.save(session);
-                });
+        // C9: Chỉ dùng lại session READY/BUSY
+        Optional<NotebookKyuubiSession> existing = sessionRepository
+                .findFirstByNotebookIdAndUserIdAndStatusInOrderByCreatedAtDesc(notebookId, user, List.of("READY", "BUSY"));
+        if (existing.isPresent()) {
+            return existing.get();
+        }
+
+        // Mở session mới trên Kyuubi (ngoài transaction)
+        Map<String, String> kSession = kyuubiRestClient.openSession(authHeader, null);
+
+        NotebookKyuubiSession session = NotebookKyuubiSession.builder()
+                .id(UUID.randomUUID().toString())
+                .notebookId(notebookId)
+                .kyuubiSessionId(kSession.get("sessionId"))
+                .kyuubiInstance(kSession.get("instance"))
+                .userId(user)
+                .status("READY")
+                .executionCountSeq(0)
+                .lastUsedAt(Instant.now())
+                .build();
+
+        return transactionTemplate.execute(status -> sessionRepository.save(session));
     }
 
+    /**
+     * Vòng đời submit 2 pha (B6, C10):
+     * 1. Transaction 1: khóa session bằng findByIdForUpdate, tăng executionCountSeq, tạo run (PENDING) và cell_run (PENDING).
+     * 2. Ngoài transaction: gọi Kyuubi submitStatement.
+     * 3. Transaction 2: thành công -> cập nhật RUNNING, execution_id, started_at. Thất bại -> cập nhật FAILED, error_code, error_message.
+     */
     public NotebookExecutionDto submitExecution(String sessionId, String cellId, String user, String authHeader) {
-        NotebookKyuubiSession session = sessionRepository.findById(sessionId)
+        // Kiểm tra quyền
+        NotebookKyuubiSession initialSession = sessionRepository.findById(sessionId)
                 .orElseThrow(() -> new NotebookApiException("NOTEBOOK_SESSION_NOT_FOUND", "Session not found", HttpStatus.NOT_FOUND));
 
-        if (!session.getUserId().equals(user)) {
+        if (!initialSession.getUserId().equals(user)) {
             throw new NotebookApiException("NOTEBOOK_SESSION_NOT_FOUND", "Session not found", HttpStatus.NOT_FOUND);
         }
 
-        if (!documentServiceClient.canExecute(session.getNotebookId(), user)) {
+        if (!documentServiceClient.canExecute(initialSession.getNotebookId(), user)) {
             throw new NotebookApiException("ACCESS_DENIED", "Requires RUNNER role to execute cell", HttpStatus.FORBIDDEN);
         }
 
-        JsonNode cellData = documentServiceClient.getCell(session.getNotebookId(), cellId, user);
+        JsonNode cellData = documentServiceClient.getCell(initialSession.getNotebookId(), cellId, user);
         String cellType = cellData.path("cellType").asText("CODE");
         String language = cellData.path("language").asText("SQL");
         String source = cellData.path("source").asText("");
@@ -94,48 +122,104 @@ public class ExecutionService {
             throw new NotebookApiException("INVALID_REQUEST", "Only CODE cells can be executed", HttpStatus.BAD_REQUEST);
         }
 
-        int count = session.getExecutionCountSeq() + 1;
-        session.setExecutionCountSeq(count);
-        session.setLastUsedAt(Instant.now());
-        sessionRepository.save(session);
+        final String runId = UUID.randomUUID().toString();
+        final String cellRunId = UUID.randomUUID().toString();
 
-        String opId = kyuubiRestClient.submitStatement(
-                session.getKyuubiSessionId(), session.getKyuubiInstance(), source, language, authHeader);
+        // Pha 1: Transaction 1 (khóa session, tạo PENDING)
+        SubmitPreparation prep = transactionTemplate.execute(status -> {
+            NotebookKyuubiSession lockedSession = sessionRepository.findByIdForUpdate(sessionId)
+                    .orElseThrow(() -> new NotebookApiException("NOTEBOOK_SESSION_NOT_FOUND", "Session not found", HttpStatus.NOT_FOUND));
 
-        String runId = UUID.randomUUID().toString();
-        NotebookRun run = NotebookRun.builder()
-                .id(runId)
-                .notebookId(session.getNotebookId())
-                .runType("CELL")
-                .status("RUNNING")
-                .triggeredBy(user)
-                .startedAt(Instant.now())
-                .cellsTotal(1)
-                .cellsDone(0)
-                .currentCellId(cellId)
-                .currentExecutionId(opId)
-                .kyuubiSessionRef(sessionId)
-                .build();
-        runRepository.save(run);
+            int count = (lockedSession.getExecutionCountSeq() != null ? lockedSession.getExecutionCountSeq() : 0) + 1;
+            lockedSession.setExecutionCountSeq(count);
+            lockedSession.setLastUsedAt(Instant.now());
+            sessionRepository.save(lockedSession);
 
-        String cellRunId = UUID.randomUUID().toString();
-        NotebookCellRun cellRun = NotebookCellRun.builder()
-                .id(cellRunId)
-                .notebookRunId(runId)
-                .cellId(cellId)
-                .executionOrder(0)
-                .language(language)
-                .status("RUNNING")
-                .startedAt(Instant.now())
-                .executionId(opId)
-                .source(source)
-                .executionCount(count)
-                .build();
-        cellRunRepository.save(cellRun);
+            NotebookRun run = NotebookRun.builder()
+                    .id(runId)
+                    .notebookId(lockedSession.getNotebookId())
+                    .runType("CELL")
+                    .status("PENDING")
+                    .triggeredBy(user)
+                    .cellsTotal(1)
+                    .cellsDone(0)
+                    .currentCellId(cellId)
+                    .kyuubiSessionRef(sessionId)
+                    .build();
+            runRepository.save(run);
 
-        return toDto(cellRun, session.getNotebookId(), sessionId);
+            NotebookCellRun cellRun = NotebookCellRun.builder()
+                    .id(cellRunId)
+                    .notebookRunId(runId)
+                    .cellId(cellId)
+                    .executionOrder(0)
+                    .language(language)
+                    .status("PENDING")
+                    .source(source)
+                    .executionCount(count)
+                    .build();
+            cellRunRepository.save(cellRun);
+
+            return new SubmitPreparation(lockedSession.getKyuubiSessionId(), lockedSession.getKyuubiInstance(), count);
+        });
+
+        // Pha 2: Ngoài transaction, gọi Kyuubi submitStatement
+        String opId = null;
+        Exception submitEx = null;
+        try {
+            opId = kyuubiRestClient.submitStatement(prep.kyuubiSessionId(), prep.kyuubiInstance(), source, language, authHeader);
+        } catch (Exception ex) {
+            submitEx = ex;
+        }
+
+        final String finalOpId = opId;
+        final Exception finalSubmitEx = submitEx;
+
+        // Pha 3: Transaction 2 (cập nhật kết quả submit)
+        return transactionTemplate.execute(status -> {
+            NotebookCellRun cr = cellRunRepository.findByIdForUpdate(cellRunId).orElseThrow();
+            NotebookRun r = runRepository.findByIdForUpdate(runId).orElseThrow();
+
+            if (finalSubmitEx == null) {
+                Instant now = Instant.now();
+                cr.setStatus("RUNNING");
+                cr.setExecutionId(finalOpId);
+                cr.setStartedAt(now);
+
+                r.setStatus("RUNNING");
+                r.setCurrentExecutionId(finalOpId);
+                r.setStartedAt(now);
+
+                cellRunRepository.save(cr);
+                runRepository.save(r);
+                return toDto(cr, initialSession.getNotebookId(), sessionId, r.getErrorCode(), false);
+            } else {
+                cr.setStatus("FAILED");
+                cr.setFinishedAt(Instant.now());
+                cr.setErrorMessage("Failed to submit statement to Kyuubi");
+
+                r.setStatus("FAILED");
+                r.setFinishedAt(Instant.now());
+                r.setErrorCode("KYUUBI_SUBMIT_FAILED");
+                r.setErrorMessage("Failed to submit statement to Kyuubi");
+
+                cellRunRepository.save(cr);
+                runRepository.save(r);
+
+                log.warn("Submit statement failed for cellRunId {}: {}", cellRunId, finalSubmitEx.getMessage());
+                if (finalSubmitEx instanceof NotebookApiException nae) {
+                    throw nae;
+                }
+                throw new NotebookApiException("KYUUBI_ERROR", "Failed to submit statement to Kyuubi", HttpStatus.BAD_GATEWAY);
+            }
+        });
     }
 
+    private record SubmitPreparation(String kyuubiSessionId, String kyuubiInstance, int executionCount) {}
+
+    /**
+     * B6 syncCellRun: Ánh xạ đầy đủ trạng thái Kyuubi và xử lý timeout / connection error.
+     */
     public NotebookExecutionDto syncAndGetExecution(String cellRunId, String user, String authHeader) {
         NotebookCellRun cellRun = cellRunRepository.findById(cellRunId)
                 .orElseThrow(() -> new NotebookApiException("EXECUTION_NOT_FOUND", "Execution not found", HttpStatus.NOT_FOUND));
@@ -147,140 +231,351 @@ public class ExecutionService {
             throw new NotebookApiException("EXECUTION_NOT_FOUND", "Execution not found", HttpStatus.NOT_FOUND);
         }
 
-        if ("RUNNING".equals(cellRun.getStatus()) && cellRun.getExecutionId() != null) {
-            NotebookKyuubiSession session = run.getKyuubiSessionRef() != null
-                    ? sessionRepository.findById(run.getKyuubiSessionRef()).orElse(null)
-                    : null;
-            String instance = session != null ? session.getKyuubiInstance() : null;
-
-            try {
-                JsonNode event = kyuubiRestClient.getOperationEvent(cellRun.getExecutionId(), instance, authHeader);
-                if (event != null && event.has("state")) {
-                    String state = event.get("state").asText().toUpperCase();
-
-                    if ("FINISHED".equals(state) || "ERROR".equals(state) || "TIMEOUT".equals(state) || "CANCELED".equals(state)) {
-                        cellRun = cellRunRepository.findByIdForUpdate(cellRunId).orElse(cellRun);
-                        if ("RUNNING".equals(cellRun.getStatus())) {
-                            cellRun.setFinishedAt(Instant.now());
-                            run.setFinishedAt(Instant.now());
-
-                            if ("FINISHED".equals(state)) {
-                                try {
-                                    JsonNode rowset = kyuubiRestClient.getOperationRowset(cellRun.getExecutionId(), instance, maxRows, authHeader);
-                                    cellRun.setStatus("SUCCEEDED");
-                                    run.setStatus("SUCCEEDED");
-                                    run.setCellsDone(1);
-
-                                    // Xử lý output AUTO theo Mục 3:
-                                    buildAutoOutput(cellRun, rowset);
-
-                                    kyuubiRestClient.closeOperation(cellRun.getExecutionId(), instance, authHeader);
-                                } catch (Exception rowsetEx) {
-                                    cellRun.setStatus("FAILED");
-                                    run.setStatus("FAILED");
-                                    cellRun.setErrorMessage("Failed to fetch rowset: " + rowsetEx.getMessage());
-                                    run.setErrorMessage(cellRun.getErrorMessage());
-                                }
-                            } else if ("CANCELED".equals(state)) {
-                                cellRun.setStatus("CANCELED");
-                                run.setStatus("CANCELED");
-                                kyuubiRestClient.closeOperation(cellRun.getExecutionId(), instance, authHeader);
-                            } else {
-                                cellRun.setStatus("FAILED");
-                                run.setStatus("FAILED");
-                                String errMsg = "Execution failed on Kyuubi";
-                                if (event.has("exception")) {
-                                    JsonNode exNode = event.get("exception");
-                                    errMsg = exNode.isObject() && exNode.has("message") ? exNode.get("message").asText() : exNode.asText();
-                                }
-                                cellRun.setErrorMessage(errMsg);
-                                run.setErrorMessage(errMsg);
-
-                                // Tạo error output JSON dạng nbformat
-                                ObjectNode errOutput = objectMapper.createObjectNode();
-                                errOutput.put("output_type", "error");
-                                errOutput.put("ename", "ExecutionError");
-                                errOutput.put("evalue", errMsg);
-                                ArrayNode tb = errOutput.putArray("traceback");
-                                tb.add(errMsg);
-                                cellRun.setOutputType("ERROR");
-                                cellRun.setOutputJson(errOutput.toString());
-
-                                kyuubiRestClient.closeOperation(cellRun.getExecutionId(), instance, authHeader);
-                            }
-
-                            // Fetch logs và lưu vào notebook_execution_logs
-                            List<String> logs = kyuubiRestClient.getOperationLog(cellRun.getExecutionId(), instance, 500, authHeader);
-                            long seq = 0;
-                            for (String line : logs) {
-                                NotebookExecutionLog logEntry = NotebookExecutionLog.builder()
-                                        .cellRunId(cellRunId)
-                                        .sequence(seq++)
-                                        .line(line)
-                                        .build();
-                                logRepository.save(logEntry);
-                            }
-
-                            cellRunRepository.save(cellRun);
-                            runRepository.save(run);
-                        }
-                    }
-                }
-            } catch (NotebookApiException ex) {
-                if ("RUNTIME_LOST".equals(ex.getCode())) {
-                    cellRun.setStatus("LOST");
-                    run.setStatus("LOST");
-                    cellRun.setErrorMessage("Runtime lost or operation closed on engine");
-                    cellRunRepository.save(cellRun);
-                    runRepository.save(run);
-                } else {
-                    throw ex;
-                }
-            }
+        if (!"RUNNING".equals(cellRun.getStatus()) || cellRun.getExecutionId() == null) {
+            return toDto(cellRun, run.getNotebookId(), run.getKyuubiSessionRef(), run.getErrorCode(), false);
         }
-        return toDto(cellRun, run.getNotebookId(), run.getKyuubiSessionRef());
+
+        NotebookKyuubiSession session = run.getKyuubiSessionRef() != null
+                ? sessionRepository.findById(run.getKyuubiSessionRef()).orElse(null)
+                : null;
+        String instance = session != null ? session.getKyuubiInstance() : null;
+
+        // Gọi Kyuubi NGOÀI transaction
+        JsonNode event = null;
+        boolean kyuubiUnavailable = false;
+        boolean opNotFound = false;
+
+        try {
+            event = kyuubiRestClient.getOperationEvent(cellRun.getExecutionId(), instance, authHeader);
+        } catch (NotebookApiException ex) {
+            if ("RUNTIME_LOST".equals(ex.getCode())) {
+                opNotFound = true;
+            } else if ("KYUUBI_UNAVAILABLE".equals(ex.getCode()) || ex.isRetryable()) {
+                kyuubiUnavailable = true;
+            } else {
+                throw ex;
+            }
+        } catch (Exception ex) {
+            kyuubiUnavailable = true;
+        }
+
+        // Nếu Kyuubi không trả lời -> giữ RUNNING, trả DTO kèm stale = true (B6)
+        if (kyuubiUnavailable) {
+            return toDto(cellRun, run.getNotebookId(), run.getKyuubiSessionRef(), run.getErrorCode(), true);
+        }
+
+        // Nếu HTTP 404 operation -> LOST
+        if (opNotFound) {
+            transactionTemplate.executeWithoutResult(status -> {
+                NotebookCellRun cr = cellRunRepository.findByIdForUpdate(cellRunId).orElse(cellRun);
+                NotebookRun r = runRepository.findByIdForUpdate(run.getId()).orElse(run);
+                cr.setStatus("LOST");
+                cr.setFinishedAt(Instant.now());
+                cr.setErrorMessage("Operation not found on Kyuubi engine");
+
+                r.setStatus("LOST");
+                r.setFinishedAt(Instant.now());
+                r.setErrorCode("OPERATION_NOT_FOUND");
+                r.setErrorMessage("Operation not found on Kyuubi engine");
+
+                cellRunRepository.save(cr);
+                runRepository.save(r);
+            });
+            return toDto(cellRunRepository.findById(cellRunId).orElse(cellRun), run.getNotebookId(), run.getKyuubiSessionRef(), "OPERATION_NOT_FOUND", false);
+        }
+
+        String rawState = event != null && event.has("state") ? event.get("state").asText().toUpperCase() : "UNKNOWN";
+
+        // Đồng bộ log khi còn RUNNING (B5.5)
+        if ("INITIALIZED".equals(rawState) || "PENDING".equals(rawState) || "RUNNING".equals(rawState)) {
+            syncLogsAndHeartbeat(cellRunId, run.getId(), cellRun.getExecutionId(), instance, authHeader);
+            return toDto(cellRunRepository.findById(cellRunId).orElse(cellRun), run.getNotebookId(), run.getKyuubiSessionRef(), run.getErrorCode(), false);
+        }
+
+        // Xử lý các trạng thái kết thúc hoặc LOST
+        handleOperationTerminalOrLost(cellRunId, run.getId(), rawState, event, instance, authHeader);
+
+        NotebookCellRun updatedCell = cellRunRepository.findById(cellRunId).orElse(cellRun);
+        NotebookRun updatedRun = runRepository.findById(run.getId()).orElse(run);
+        return toDto(updatedCell, updatedRun.getNotebookId(), updatedRun.getKyuubiSessionRef(), updatedRun.getErrorCode(), false);
     }
 
-    private void buildAutoOutput(NotebookCellRun cellRun, JsonNode rowset) {
-        if ("PYTHON".equalsIgnoreCase(cellRun.getLanguage())) {
-            // Python stdout trong AUTO mode: 1 cột text
-            StringBuilder stdout = new StringBuilder();
-            if (rowset != null && rowset.isArray()) {
-                for (JsonNode row : rowset) {
-                    if (row.isArray() && row.size() > 0) {
-                        stdout.append(row.get(0).asText()).append("\n");
-                    } else {
-                        stdout.append(row.asText()).append("\n");
+    private void syncLogsAndHeartbeat(String cellRunId, String runId, String opId, String instance, String authHeader) {
+        List<String> logs = Collections.emptyList();
+        try {
+            logs = kyuubiRestClient.getOperationLog(opId, instance, 500, authHeader);
+        } catch (Exception ex) {
+            log.warn("Failed to fetch running log: {}", ex.getMessage());
+        }
+
+        final List<String> finalLogs = logs;
+        transactionTemplate.executeWithoutResult(status -> {
+            NotebookRun r = runRepository.findById(runId).orElse(null);
+            if (r != null) {
+                r.setHeartbeatAt(Instant.now());
+                runRepository.save(r);
+            }
+            if (!finalLogs.isEmpty()) {
+                appendLogs(cellRunId, finalLogs);
+            }
+        });
+    }
+
+    private void appendLogs(String cellRunId, List<String> lines) {
+        Long maxSeq = logRepository.findMaxSequenceByCellRunId(cellRunId);
+        long startSeq = (maxSeq == null) ? 0 : maxSeq + 1;
+        for (String line : lines) {
+            NotebookExecutionLog logEntry = NotebookExecutionLog.builder()
+                    .cellRunId(cellRunId)
+                    .sequence(startSeq++)
+                    .line(line)
+                    .build();
+            logRepository.save(logEntry);
+        }
+    }
+
+    private void handleOperationTerminalOrLost(
+            String cellRunId, String runId, String state, JsonNode event, String instance, String authHeader) {
+
+        NotebookCellRun cellRun = cellRunRepository.findById(cellRunId).orElse(null);
+        if (cellRun == null || !"RUNNING".equals(cellRun.getStatus())) {
+            return;
+        }
+
+        String opId = cellRun.getExecutionId();
+
+        if ("FINISHED".equals(state)) {
+            // Lấy metadata và rowset ngoài transaction (B5)
+            JsonNode metadata = null;
+            JsonNode rowset = null;
+            Exception fetchEx = null;
+
+            try {
+                if ("SQL".equalsIgnoreCase(cellRun.getLanguage())) {
+                    metadata = kyuubiRestClient.getResultSetMetadata(opId, instance, authHeader);
+                }
+                rowset = kyuubiRestClient.getOperationRowset(opId, instance, maxRows, authHeader);
+            } catch (Exception ex) {
+                fetchEx = ex;
+            }
+
+            final JsonNode finalMetadata = metadata;
+            final JsonNode finalRowset = rowset;
+            final Exception finalFetchEx = fetchEx;
+
+            // Fetch log cuối cùng
+            List<String> logs = Collections.emptyList();
+            try {
+                logs = kyuubiRestClient.getOperationLog(opId, instance, 500, authHeader);
+            } catch (Exception ignored) {}
+
+            final List<String> finalLogs = logs;
+
+            transactionTemplate.executeWithoutResult(txStatus -> {
+                NotebookCellRun cr = cellRunRepository.findByIdForUpdate(cellRunId).orElse(null);
+                NotebookRun r = runRepository.findByIdForUpdate(runId).orElse(null);
+                if (cr == null || !"RUNNING".equals(cr.getStatus()) || r == null) {
+                    return;
+                }
+
+                Instant finishedAt = Instant.now();
+                cr.setFinishedAt(finishedAt);
+                r.setFinishedAt(finishedAt);
+                if (cr.getStartedAt() != null) {
+                    cr.setExecutionTimeMs(finishedAt.toEpochMilli() - cr.getStartedAt().toEpochMilli());
+                }
+
+                if (finalFetchEx != null) {
+                    cr.setStatus("FAILED");
+                    cr.setErrorMessage("Failed to fetch query results");
+                    r.setStatus("FAILED");
+                    r.setErrorCode("ROWSET_FETCH_FAILED");
+                    r.setErrorMessage("Failed to fetch query results");
+                } else {
+                    cr.setStatus("SUCCEEDED");
+                    r.setStatus("SUCCEEDED");
+                    r.setCellsDone(1);
+                    buildAutoOutput(cr, finalMetadata, finalRowset);
+                }
+
+                if (!finalLogs.isEmpty()) {
+                    appendLogs(cellRunId, finalLogs);
+                }
+
+                cellRunRepository.save(cr);
+                runRepository.save(r);
+            });
+
+            try {
+                kyuubiRestClient.closeOperation(opId, instance, authHeader);
+            } catch (Exception ignored) {}
+
+        } else if ("CANCELED".equals(state)) {
+            transactionTemplate.executeWithoutResult(txStatus -> {
+                NotebookCellRun cr = cellRunRepository.findByIdForUpdate(cellRunId).orElse(null);
+                NotebookRun r = runRepository.findByIdForUpdate(runId).orElse(null);
+                if (cr != null && "RUNNING".equals(cr.getStatus()) && r != null) {
+                    Instant now = Instant.now();
+                    cr.setStatus("CANCELED");
+                    cr.setFinishedAt(now);
+                    if (cr.getStartedAt() != null) {
+                        cr.setExecutionTimeMs(now.toEpochMilli() - cr.getStartedAt().toEpochMilli());
                     }
+                    r.setStatus("CANCELED");
+                    r.setFinishedAt(now);
+                    cellRunRepository.save(cr);
+                    runRepository.save(r);
+                }
+            });
+            try {
+                kyuubiRestClient.closeOperation(opId, instance, authHeader);
+            } catch (Exception ignored) {}
+
+        } else if ("ERROR".equals(state) || "TIMEOUT".equals(state)) {
+            String rawErr = "Execution failed on Kyuubi";
+            if (event != null && event.has("exception")) {
+                JsonNode exNode = event.get("exception");
+                rawErr = exNode.isObject() && exNode.has("message") ? exNode.get("message").asText() : exNode.asText();
+            }
+
+            KyuubiResultParser.ErrorInfo errorInfo = resultParser.error(rawErr);
+            final String errorCode = "TIMEOUT".equals(state) ? "TIMEOUT" : "EXECUTION_ERROR";
+            final String cleanMsg = "TIMEOUT".equals(state) ? "Execution timed out" : errorInfo.evalue();
+
+            // Logs
+            List<String> logs = Collections.emptyList();
+            try {
+                logs = kyuubiRestClient.getOperationLog(opId, instance, 500, authHeader);
+            } catch (Exception ignored) {}
+            final List<String> finalLogs = logs;
+
+            transactionTemplate.executeWithoutResult(txStatus -> {
+                NotebookCellRun cr = cellRunRepository.findByIdForUpdate(cellRunId).orElse(null);
+                NotebookRun r = runRepository.findByIdForUpdate(runId).orElse(null);
+                if (cr != null && "RUNNING".equals(cr.getStatus()) && r != null) {
+                    Instant now = Instant.now();
+                    cr.setStatus("FAILED");
+                    cr.setFinishedAt(now);
+                    if (cr.getStartedAt() != null) {
+                        cr.setExecutionTimeMs(now.toEpochMilli() - cr.getStartedAt().toEpochMilli());
+                    }
+                    cr.setErrorMessage(cleanMsg);
+
+                    // Tạo nbformat error output
+                    ObjectNode errOutput = objectMapper.createObjectNode();
+                    errOutput.put("output_type", "error");
+                    errOutput.put("ename", errorInfo.ename());
+                    errOutput.put("evalue", errorInfo.evalue());
+                    ArrayNode tb = errOutput.putArray("traceback");
+                    for (String tbLine : errorInfo.traceback()) {
+                        tb.add(tbLine);
+                    }
+                    cr.setOutputType("ERROR");
+                    cr.setOutputJson(errOutput.toString());
+
+                    r.setStatus("FAILED");
+                    r.setFinishedAt(now);
+                    r.setErrorCode(errorCode);
+                    r.setErrorMessage(cleanMsg);
+
+                    if (!finalLogs.isEmpty()) {
+                        appendLogs(cellRunId, finalLogs);
+                    }
+
+                    cellRunRepository.save(cr);
+                    runRepository.save(r);
+                }
+            });
+            try {
+                kyuubiRestClient.closeOperation(opId, instance, authHeader);
+            } catch (Exception ignored) {}
+
+        } else {
+            // CLOSED, UNKNOWN, hoặc trạng thái lạ -> LOST, error_code = "KYUUBI_" + state
+            final String errorCode = "KYUUBI_" + state;
+            transactionTemplate.executeWithoutResult(txStatus -> {
+                NotebookCellRun cr = cellRunRepository.findByIdForUpdate(cellRunId).orElse(null);
+                NotebookRun r = runRepository.findByIdForUpdate(runId).orElse(null);
+                if (cr != null && "RUNNING".equals(cr.getStatus()) && r != null) {
+                    Instant now = Instant.now();
+                    cr.setStatus("LOST");
+                    cr.setFinishedAt(now);
+                    if (cr.getStartedAt() != null) {
+                        cr.setExecutionTimeMs(now.toEpochMilli() - cr.getStartedAt().toEpochMilli());
+                    }
+                    cr.setErrorMessage("Kyuubi engine operation state: " + state);
+
+                    r.setStatus("LOST");
+                    r.setFinishedAt(now);
+                    r.setErrorCode(errorCode);
+                    r.setErrorMessage("Kyuubi engine operation state: " + state);
+
+                    cellRunRepository.save(cr);
+                    runRepository.save(r);
+                }
+            });
+        }
+    }
+
+    private void buildAutoOutput(NotebookCellRun cellRun, JsonNode metadata, JsonNode rowset) {
+        if ("PYTHON".equalsIgnoreCase(cellRun.getLanguage())) {
+            List<List<JsonNode>> parsedRows = resultParser.rows(rowset);
+            StringBuilder stdout = new StringBuilder();
+            for (List<JsonNode> row : parsedRows) {
+                if (!row.isEmpty()) {
+                    JsonNode val = row.get(0);
+                    stdout.append(val != null && !val.isNull() ? val.asText() : "").append("\n");
                 }
             }
-            ObjectNode streamOut = objectMapper.createObjectNode();
-            streamOut.put("output_type", "stream");
-            streamOut.put("name", "stdout");
-            streamOut.put("text", stdout.toString());
 
-            cellRun.setOutputType("STREAM");
-            cellRun.setOutputJson(streamOut.toString());
+            String stdoutStr = stdout.toString();
+            if (stdoutStr.isEmpty()) {
+                cellRun.setOutputType("NONE");
+                cellRun.setOutputJson(null);
+                cellRun.setRowCount(0L);
+            } else {
+                ObjectNode streamOut = objectMapper.createObjectNode();
+                streamOut.put("output_type", "stream");
+                streamOut.put("name", "stdout");
+                streamOut.put("text", stdoutStr);
+
+                cellRun.setOutputType("STREAM");
+                cellRun.setOutputJson(streamOut.toString());
+                cellRun.setRowCount((long) parsedRows.size());
+            }
         } else {
-            // SQL: table format
+            // SQL: table format + plain ascii
+            List<KyuubiResultParser.Column> cols = resultParser.columns(metadata);
+            List<List<JsonNode>> rows = resultParser.rows(rowset);
+
             ObjectNode execResult = objectMapper.createObjectNode();
             execResult.put("output_type", "execute_result");
             ObjectNode data = execResult.putObject("data");
+
             ObjectNode tableJson = data.putObject("application/vnd.notebook.table+json");
-
-            ArrayNode cols = tableJson.putArray("columns");
-            ArrayNode rows = tableJson.putArray("rows");
-            tableJson.put("truncated", false);
-
-            if (rowset != null && rowset.isArray()) {
-                for (JsonNode row : rowset) {
-                    rows.add(row);
-                }
-                cellRun.setRowCount((long) rowset.size());
-            } else {
-                cellRun.setRowCount(0L);
+            ArrayNode colsArray = tableJson.putArray("columns");
+            for (KyuubiResultParser.Column col : cols) {
+                ObjectNode c = colsArray.addObject();
+                c.put("name", col.columnName());
+                c.put("type", col.dataType());
             }
 
+            ArrayNode rowsArray = tableJson.putArray("rows");
+            for (List<JsonNode> row : rows) {
+                ArrayNode r = rowsArray.addArray();
+                for (JsonNode fieldVal : row) {
+                    r.add(fieldVal);
+                }
+            }
+
+            boolean truncated = rows.size() >= maxRows;
+            tableJson.put("truncated", truncated);
+
+            // Plain text ascii table
+            String asciiTable = KyuubiResultParser.renderPlainAsciiTable(cols, rows);
+            data.put("text/plain", asciiTable);
+
+            cellRun.setRowCount((long) rows.size());
             cellRun.setOutputType("TABLE");
             cellRun.setOutputJson(execResult.toString());
         }
@@ -297,16 +592,51 @@ public class ExecutionService {
             throw new NotebookApiException("EXECUTION_NOT_FOUND", "Execution not found", HttpStatus.NOT_FOUND);
         }
 
+        // C8: cancelExecution dùng findByIdForUpdate, chỉ đổi khi trạng thái còn PENDING/RUNNING. Đặt cancel_requested=true trước khi gọi Kyuubi.
+        boolean proceedCancel = Boolean.TRUE.equals(transactionTemplate.execute(status -> {
+            NotebookCellRun cr = cellRunRepository.findByIdForUpdate(cellRunId).orElse(null);
+            NotebookRun r = runRepository.findByIdForUpdate(run.getId()).orElse(null);
+            if (cr == null || r == null) return false;
+
+            if ("PENDING".equals(cr.getStatus()) || "RUNNING".equals(cr.getStatus())) {
+                r.setCancelRequested(true);
+                runRepository.save(r);
+                return true;
+            }
+            return false;
+        }));
+
+        if (!proceedCancel) {
+            return;
+        }
+
         NotebookKyuubiSession session = run.getKyuubiSessionRef() != null
                 ? sessionRepository.findById(run.getKyuubiSessionRef()).orElse(null)
                 : null;
         String instance = session != null ? session.getKyuubiInstance() : null;
 
-        kyuubiRestClient.cancelOperation(cellRun.getExecutionId(), instance, authHeader);
-        cellRun.setStatus("CANCELED");
-        run.setStatus("CANCELED");
-        cellRunRepository.save(cellRun);
-        runRepository.save(run);
+        if (cellRun.getExecutionId() != null) {
+            try {
+                kyuubiRestClient.cancelOperation(cellRun.getExecutionId(), instance, authHeader);
+            } catch (Exception ex) {
+                log.warn("Failed to cancel operation on Kyuubi: {}", ex.getMessage());
+            }
+        }
+
+        transactionTemplate.executeWithoutResult(status -> {
+            NotebookCellRun cr = cellRunRepository.findByIdForUpdate(cellRunId).orElse(null);
+            NotebookRun r = runRepository.findByIdForUpdate(run.getId()).orElse(null);
+            if (cr != null && ("PENDING".equals(cr.getStatus()) || "RUNNING".equals(cr.getStatus()))) {
+                cr.setStatus("CANCELED");
+                cr.setFinishedAt(Instant.now());
+                cellRunRepository.save(cr);
+            }
+            if (r != null && ("PENDING".equals(r.getStatus()) || "RUNNING".equals(r.getStatus()))) {
+                r.setStatus("CANCELED");
+                r.setFinishedAt(Instant.now());
+                runRepository.save(r);
+            }
+        });
     }
 
     public void restartRuntime(String sessionId, String user, String authHeader) {
@@ -318,16 +648,22 @@ public class ExecutionService {
         }
 
         if (session.getKyuubiSessionId() != null) {
-            kyuubiRestClient.closeSession(session.getKyuubiSessionId(), session.getKyuubiInstance(), authHeader);
+            try {
+                kyuubiRestClient.closeSession(session.getKyuubiSessionId(), session.getKyuubiInstance(), authHeader);
+            } catch (Exception ignored) {}
         }
 
         Map<String, String> newSession = kyuubiRestClient.openSession(authHeader, null);
-        session.setKyuubiSessionId(newSession.get("sessionId"));
-        session.setKyuubiInstance(newSession.get("instance"));
-        session.setStatus("READY");
-        session.setExecutionCountSeq(0);
-        session.setLastUsedAt(Instant.now());
-        sessionRepository.save(session);
+
+        transactionTemplate.executeWithoutResult(status -> {
+            NotebookKyuubiSession s = sessionRepository.findByIdForUpdate(sessionId).orElse(session);
+            s.setKyuubiSessionId(newSession.get("sessionId"));
+            s.setKyuubiInstance(newSession.get("instance"));
+            s.setStatus("READY");
+            s.setExecutionCountSeq(0);
+            s.setLastUsedAt(Instant.now());
+            sessionRepository.save(s);
+        });
     }
 
     public List<NotebookExecutionDto> getLatestExecutions(String notebookId, String cellId, String user) {
@@ -335,7 +671,7 @@ public class ExecutionService {
                 notebookId, cellId, user, PageRequest.of(0, 10));
         List<NotebookExecutionDto> dtos = new ArrayList<>();
         for (NotebookCellRun r : runs) {
-            dtos.add(toDto(r, notebookId, null));
+            dtos.add(toDto(r, notebookId, null, null, false));
         }
         return dtos;
     }
@@ -349,7 +685,7 @@ public class ExecutionService {
         return sb.toString();
     }
 
-    private NotebookExecutionDto toDto(NotebookCellRun cellRun, String notebookId, String sessionId) {
+    private NotebookExecutionDto toDto(NotebookCellRun cellRun, String notebookId, String sessionId, String errorCode, boolean stale) {
         return NotebookExecutionDto.builder()
                 .id(cellRun.getId())
                 .sessionId(sessionId)
@@ -361,6 +697,8 @@ public class ExecutionService {
                 .executionCount(cellRun.getExecutionCount())
                 .resultOutput(cellRun.getOutputJson())
                 .errorMessage(cellRun.getErrorMessage())
+                .errorCode(errorCode)
+                .stale(stale ? true : null)
                 .createdAt(cellRun.getStartedAt())
                 .build();
     }

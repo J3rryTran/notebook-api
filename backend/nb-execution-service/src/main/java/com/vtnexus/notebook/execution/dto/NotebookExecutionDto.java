@@ -24,5 +24,7 @@ public class NotebookExecutionDto {
     private String resultOutput;
     private String logOutput;
     private String errorMessage;
+    private String errorCode;
+    private Boolean stale;
     private Instant createdAt;
 }
