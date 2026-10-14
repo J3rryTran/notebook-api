@@ -27,7 +27,7 @@ public class InternalSessionClient implements SessionResolver {
 
     public InternalSessionClient(
             @Value("${notebook.notebook-service-url:http://localhost:8080}") String notebookServiceUrl,
-            @Value("${notebook.internalToken:${notebook.internal-token:}}") String internalToken,
+            @Value("${notebook.internalToken:${notebook.internal-token}}") String internalToken,
             ObjectMapper objectMapper) {
         this.notebookServiceUrl = notebookServiceUrl.replaceAll("/+$", "");
         this.internalToken = internalToken;

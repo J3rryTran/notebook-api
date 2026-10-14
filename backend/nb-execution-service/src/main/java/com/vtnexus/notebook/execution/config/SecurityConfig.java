@@ -36,12 +36,14 @@ public class SecurityConfig {
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         AuthMode mode = AuthMode.fromString(authProperties.getMode());
 
-        Filter authFilter;
-        if (mode == AuthMode.NO_OIDC || mode == AuthMode.LDAP) {
-            authFilter = new SessionCookieFilter(internalSessionClient, objectMapper);
-        } else {
-            authFilter = new BearerFilter(bearerAuthenticator, objectMapper);
+        if (mode == null) {
+            throw new IllegalStateException("Unsupported or missing auth mode: " + authProperties.getMode());
         }
+
+        Filter authFilter = switch (mode) {
+            case NO_OIDC, LDAP -> new SessionCookieFilter(internalSessionClient, objectMapper);
+            case OIDC -> new BearerFilter(bearerAuthenticator, objectMapper);
+        };
 
         http
             .csrf(csrf -> csrf.disable())

@@ -2,20 +2,23 @@ package com.vtnexus.notebook.common.datasource;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.env.EnvironmentPostProcessor;
+import org.springframework.core.Ordered;
 import org.springframework.core.env.ConfigurableEnvironment;
 
-public class DatasourceGuard implements EnvironmentPostProcessor {
+public class DatasourceGuard implements EnvironmentPostProcessor, Ordered {
 
     public static final String REQUIRED_PREFIX = "jdbc:mariadb:";
     public static final String ERROR_MESSAGE = "notebook-api only supports MariaDB";
 
     @Override
+    public int getOrder() {
+        return Ordered.LOWEST_PRECEDENCE;
+    }
+
+    @Override
     public void postProcessEnvironment(ConfigurableEnvironment environment, SpringApplication application) {
-        // Chỉ kiểm tra khi có cấu hình datasource hoặc khi context load datasource
         String url = environment.getProperty("spring.datasource.url");
-        if (url != null) {
-            validateUrl(url);
-        }
+        validateUrl(url);
     }
 
     public static void validateUrl(String url) {

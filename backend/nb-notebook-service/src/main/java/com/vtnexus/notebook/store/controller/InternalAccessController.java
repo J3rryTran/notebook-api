@@ -28,7 +28,7 @@ public class InternalAccessController {
     public InternalAccessController(
             NotebookService notebookService,
             NotebookCellService cellService,
-            @Value("${notebook.internalToken:${notebook.internal-token:}}") String internalToken) {
+            @Value("${notebook.internalToken:${notebook.internal-token}}") String internalToken) {
         this.notebookService = notebookService;
         this.cellService = cellService;
         this.internalToken = internalToken;

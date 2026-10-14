@@ -2,13 +2,19 @@ package com.vtnexus.notebook.common.auth;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.env.EnvironmentPostProcessor;
+import org.springframework.core.Ordered;
 import org.springframework.core.env.ConfigurableEnvironment;
 import org.springframework.core.env.Environment;
+import org.springframework.core.env.Profiles;
 
-import java.util.Arrays;
 import java.util.Base64;
 
-public class AuthPropertiesValidator implements EnvironmentPostProcessor {
+public class AuthPropertiesValidator implements EnvironmentPostProcessor, Ordered {
+
+    @Override
+    public int getOrder() {
+        return Ordered.LOWEST_PRECEDENCE;
+    }
 
     @Override
     public void postProcessEnvironment(ConfigurableEnvironment environment, SpringApplication application) {
@@ -41,9 +47,8 @@ public class AuthPropertiesValidator implements EnvironmentPostProcessor {
             }
         }
 
-        // Profile kiểm tra
-        String[] activeProfiles = env.getActiveProfiles();
-        boolean isDev = Arrays.asList(activeProfiles).contains("dev");
+        // Profile kiểm tra qua acceptsProfiles
+        boolean isDev = env.acceptsProfiles(Profiles.of("dev"));
 
         // 3-7. Cấu hình mode LDAP
         if (mode == AuthMode.LDAP) {
@@ -80,9 +85,15 @@ public class AuthPropertiesValidator implements EnvironmentPostProcessor {
         }
 
         // 8. internalToken bắt buộc
-        String internalToken = env.getProperty("notebook.internalToken");
-        if (internalToken == null || internalToken.isBlank()) {
-            internalToken = env.getProperty("notebook.internal-token");
+        String internalToken = null;
+        try {
+            internalToken = env.getProperty("notebook.internalToken");
+            if (internalToken == null || internalToken.isBlank()) {
+                internalToken = env.getProperty("notebook.internal-token");
+            }
+        } catch (IllegalArgumentException e) {
+            // Unresolved placeholder like ${NOTEBOOK_INTERNAL_TOKEN}
+            throw new IllegalStateException("NOTEBOOK_INTERNAL_TOKEN is required", e);
         }
         if (internalToken == null || internalToken.isBlank()) {
             throw new IllegalStateException("NOTEBOOK_INTERNAL_TOKEN is required");

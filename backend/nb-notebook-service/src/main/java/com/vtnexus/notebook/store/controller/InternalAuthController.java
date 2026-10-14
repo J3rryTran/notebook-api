@@ -23,7 +23,7 @@ public class InternalAuthController {
     public InternalAuthController(
             AuthProperties authProperties,
             AuthSessionService sessionService,
-            @Value("${notebook.internalToken:${notebook.internal-token:}}") String internalToken) {
+            @Value("${notebook.internalToken:${notebook.internal-token}}") String internalToken) {
         this.authProperties = authProperties;
         this.sessionService = sessionService;
         this.internalToken = internalToken;

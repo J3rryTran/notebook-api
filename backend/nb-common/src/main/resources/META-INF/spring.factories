@@ -1,0 +1,3 @@
+org.springframework.boot.env.EnvironmentPostProcessor=\
+  com.vtnexus.notebook.common.datasource.DatasourceGuard,\
+  com.vtnexus.notebook.common.auth.AuthPropertiesValidator
