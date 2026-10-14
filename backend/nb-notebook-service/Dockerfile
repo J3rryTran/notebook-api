@@ -1,8 +1,6 @@
 FROM maven:3.9-eclipse-temurin-17 AS builder
 WORKDIR /workspace
-COPY pom.xml pom.xml
-COPY nb-common nb-common
-COPY nb-notebook-service nb-notebook-service
+COPY . .
 RUN mvn clean package -pl nb-notebook-service -am -DskipTests
 
 FROM eclipse-temurin:17-jre

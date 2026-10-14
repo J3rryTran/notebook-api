@@ -26,6 +26,10 @@ public class ErrorEnvelope {
         private Map<String, Object> details;
     }
 
+    public static ErrorEnvelope of(String code, String message) {
+        return of(code, message, null, false, Collections.emptyMap());
+    }
+
     public static ErrorEnvelope of(String code, String message, String requestId, boolean retryable, Map<String, Object> details) {
         return ErrorEnvelope.builder()
                 .error(ErrorDetail.builder()

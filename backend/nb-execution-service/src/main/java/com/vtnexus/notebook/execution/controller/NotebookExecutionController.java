@@ -1,9 +1,9 @@
 package com.vtnexus.notebook.execution.controller;
 
-import com.vtnexus.notebook.execution.model.NotebookExecution;
-import com.vtnexus.notebook.execution.model.NotebookSession;
-import com.vtnexus.notebook.execution.repository.NotebookExecutionRepository;
-import com.vtnexus.notebook.execution.repository.NotebookSessionRepository;
+import com.vtnexus.notebook.execution.dto.NotebookExecutionDto;
+import com.vtnexus.notebook.execution.model.NotebookKyuubiSession;
+import com.vtnexus.notebook.execution.repository.NotebookCellRunRepository;
+import com.vtnexus.notebook.execution.repository.NotebookKyuubiSessionRepository;
 import com.vtnexus.notebook.execution.service.ExecutionService;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpHeaders;
@@ -20,20 +20,20 @@ import java.util.concurrent.ForkJoinPool;
 public class NotebookExecutionController {
 
     private final ExecutionService executionService;
-    private final NotebookSessionRepository sessionRepository;
-    private final NotebookExecutionRepository executionRepository;
+    private final NotebookKyuubiSessionRepository sessionRepository;
+    private final NotebookCellRunRepository cellRunRepository;
 
     public NotebookExecutionController(
             ExecutionService executionService,
-            NotebookSessionRepository sessionRepository,
-            NotebookExecutionRepository executionRepository) {
+            NotebookKyuubiSessionRepository sessionRepository,
+            NotebookCellRunRepository cellRunRepository) {
         this.executionService = executionService;
         this.sessionRepository = sessionRepository;
-        this.executionRepository = executionRepository;
+        this.cellRunRepository = cellRunRepository;
     }
 
     @PostMapping("/notebooks/{notebookId}/sessions")
-    public ResponseEntity<NotebookSession> getOrCreateSession(
+    public ResponseEntity<NotebookKyuubiSession> getOrCreateSession(
             @PathVariable("notebookId") String notebookId,
             @AuthenticationPrincipal Object principal,
             HttpServletRequest request) {
@@ -42,7 +42,7 @@ public class NotebookExecutionController {
     }
 
     @PostMapping("/notebook-sessions/{sessionId}/executions")
-    public ResponseEntity<NotebookExecution> submitExecution(
+    public ResponseEntity<NotebookExecutionDto> submitExecution(
             @PathVariable("sessionId") String sessionId,
             @RequestBody Map<String, String> body,
             @AuthenticationPrincipal Object principal,
@@ -53,7 +53,7 @@ public class NotebookExecutionController {
     }
 
     @GetMapping("/executions/{executionId}")
-    public ResponseEntity<NotebookExecution> getExecution(
+    public ResponseEntity<NotebookExecutionDto> getExecution(
             @PathVariable("executionId") String executionId,
             @AuthenticationPrincipal Object principal,
             HttpServletRequest request) {
@@ -61,7 +61,6 @@ public class NotebookExecutionController {
         return ResponseEntity.ok(executionService.syncAndGetExecution(executionId, principal.toString(), auth));
     }
 
-    // Long-poll /events sử dụng Servlet DeferredResult (Q1 & Java 17 non-blocking)
     @GetMapping("/executions/{executionId}/events")
     public DeferredResult<ResponseEntity<Map<String, Object>>> getExecutionEvents(
             @PathVariable("executionId") String executionId,
@@ -79,11 +78,10 @@ public class NotebookExecutionController {
 
         ForkJoinPool.commonPool().submit(() -> {
             try {
-                NotebookExecution exec = executionService.syncAndGetExecution(executionId, principal.toString(), auth);
+                NotebookExecutionDto exec = executionService.syncAndGetExecution(executionId, principal.toString(), auth);
                 deferred.setResult(ResponseEntity.ok(Map.of(
                         "executionId", exec.getId(),
-                        "status", exec.getStatus(),
-                        "sequence", exec.getSequenceNumber()
+                        "status", exec.getStatus()
                 )));
             } catch (Exception ex) {
                 deferred.setErrorResult(ex);
@@ -103,7 +101,6 @@ public class NotebookExecutionController {
         return ResponseEntity.noContent().build();
     }
 
-    // Spec chuẩn F16: /api/v1/notebook-runtimes/{runtimeId}:restart
     @PostMapping("/notebook-runtimes/{runtimeId}:restart")
     public ResponseEntity<Void> restartRuntime(
             @PathVariable("runtimeId") String runtimeId,
@@ -120,7 +117,7 @@ public class NotebookExecutionController {
             @AuthenticationPrincipal Object principal,
             HttpServletRequest request) {
         String auth = request.getHeader(HttpHeaders.AUTHORIZATION);
-        NotebookExecution exec = executionService.syncAndGetExecution(executionId, principal.toString(), auth);
+        NotebookExecutionDto exec = executionService.syncAndGetExecution(executionId, principal.toString(), auth);
         return ResponseEntity.ok(exec.getResultOutput() != null ? exec.getResultOutput() : "[]");
     }
 
@@ -131,10 +128,11 @@ public class NotebookExecutionController {
             @AuthenticationPrincipal Object principal,
             HttpServletRequest request) {
         String auth = request.getHeader(HttpHeaders.AUTHORIZATION);
-        NotebookExecution exec = executionService.syncAndGetExecution(executionId, principal.toString(), auth);
+        executionService.syncAndGetExecution(executionId, principal.toString(), auth);
+        String logs = executionService.getExecutionLogs(executionId);
         return ResponseEntity.ok(Map.of(
                 "executionId", executionId,
-                "logs", exec.getLogOutput() != null ? exec.getLogOutput() : ""
+                "logs", logs
         ));
     }
 
@@ -146,7 +144,7 @@ public class NotebookExecutionController {
             @AuthenticationPrincipal Object principal,
             HttpServletRequest request) {
         String auth = request.getHeader(HttpHeaders.AUTHORIZATION);
-        NotebookExecution exec = executionService.syncAndGetExecution(executionId, principal.toString(), auth);
+        NotebookExecutionDto exec = executionService.syncAndGetExecution(executionId, principal.toString(), auth);
         return ResponseEntity.ok(exec.getResultOutput() != null ? exec.getResultOutput() : "[]");
     }
 
@@ -155,7 +153,7 @@ public class NotebookExecutionController {
             @PathVariable("sessionId") String sessionId,
             @AuthenticationPrincipal Object principal,
             HttpServletRequest request) {
-        NotebookSession session = sessionRepository.findById(sessionId).orElse(null);
+        NotebookKyuubiSession session = sessionRepository.findById(sessionId).orElse(null);
         if (session != null && session.getUserId().equals(principal.toString())) {
             session.setStatus("CLOSED");
             sessionRepository.save(session);
@@ -167,7 +165,7 @@ public class NotebookExecutionController {
     public ResponseEntity<Map<String, Object>> getSessionRuntimes(
             @PathVariable("sessionId") String sessionId,
             @AuthenticationPrincipal Object principal) {
-        NotebookSession session = sessionRepository.findById(sessionId)
+        NotebookKyuubiSession session = sessionRepository.findById(sessionId)
                 .orElseThrow(() -> new com.vtnexus.notebook.common.exception.NotebookApiException("NOTEBOOK_SESSION_NOT_FOUND", "Session not found", org.springframework.http.HttpStatus.NOT_FOUND));
         if (!session.getUserId().equals(principal.toString())) {
             throw new com.vtnexus.notebook.common.exception.NotebookApiException("NOTEBOOK_SESSION_NOT_FOUND", "Session not found", org.springframework.http.HttpStatus.NOT_FOUND);
@@ -190,7 +188,7 @@ public class NotebookExecutionController {
     }
 
     @GetMapping("/executions")
-    public ResponseEntity<List<NotebookExecution>> listExecutions(
+    public ResponseEntity<List<NotebookExecutionDto>> listExecutions(
             @RequestParam("notebookId") String notebookId,
             @RequestParam("cellId") String cellId,
             @AuthenticationPrincipal Object principal) {
@@ -204,11 +202,10 @@ public class NotebookExecutionController {
         ));
     }
 
-    // S10 & P2-8: /notebook-status với số liệu thống kê thật từ database
     @GetMapping("/notebook-status")
     public ResponseEntity<Map<String, Object>> getNotebookStatus() {
-        long activeSessions = sessionRepository.countByStatus("READY");
-        long runningExecutions = executionRepository.countByStatus("RUNNING");
+        long activeSessions = sessionRepository.count();
+        long runningExecutions = cellRunRepository.count();
 
         Map<String, Object> resp = new HashMap<>();
         resp.put("notebookService", "HEALTHY");

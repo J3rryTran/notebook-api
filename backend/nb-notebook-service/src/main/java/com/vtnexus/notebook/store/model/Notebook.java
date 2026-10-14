@@ -6,11 +6,9 @@ import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.List;
 
 @Entity
-@Table(name = "notebooks", schema = "nb_document")
+@Table(name = "notebooks")
 @Getter
 @Setter
 @NoArgsConstructor
@@ -19,31 +17,48 @@ import java.util.List;
 public class Notebook {
 
     @Id
-    @Column(length = 64, nullable = false)
+    @Column(name = "id", length = 36, nullable = false)
     private String id;
 
-    @Column(nullable = false)
-    private String name;
+    @Column(name = "node_id", length = 36)
+    private String nodeId;
 
-    @Column(name = "folder_id", length = 64)
-    private String folderId;
+    @Column(name = "notebook_format", length = 30, nullable = false)
+    @Builder.Default
+    private String notebookFormat = "SQLLAB_JSON_V1";
 
-    @Column(columnDefinition = "TEXT")
-    private String description;
+    @Column(name = "default_language", length = 30, nullable = false)
+    @Builder.Default
+    private String defaultLanguage = "SQL";
 
-    @Column(name = "default_catalog", length = 128)
-    private String defaultCatalog;
+    @Column(name = "document_json", columnDefinition = "LONGTEXT", nullable = false)
+    private String documentJson;
 
-    @Column(name = "default_schema", length = 128)
-    private String defaultSchema;
-
-    @Column(nullable = false, length = 128)
-    private String owner;
+    @Column(name = "current_revision", nullable = false)
+    @Builder.Default
+    private Long currentRevision = 1L;
 
     @Version
-    @Column(nullable = false)
+    @Column(name = "lock_version", nullable = false)
     @Builder.Default
-    private Long version = 1L;
+    private Long lockVersion = 0L;
+
+    @Column(name = "name", length = 255, nullable = false)
+    @Builder.Default
+    private String name = "";
+
+    @Column(name = "owner", length = 255, nullable = false)
+    @Builder.Default
+    private String owner = "";
+
+    @Column(name = "folder_id", length = 36)
+    private String folderId;
+
+    @Column(name = "description", columnDefinition = "LONGTEXT")
+    private String description;
+
+    @Column(name = "deleted_at")
+    private Instant deletedAt;
 
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
@@ -53,11 +68,9 @@ public class Notebook {
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
-    @Column(name = "deleted_at")
-    private Instant deletedAt;
+    @Column(name = "zeppelin_note_id", length = 64)
+    private String zeppelinNoteId;
 
-    @OneToMany(mappedBy = "notebook", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
-    @OrderBy("position ASC")
-    @Builder.Default
-    private List<NotebookCell> cells = new ArrayList<>();
+    @Column(name = "kyuubi_notebook_id", length = 64)
+    private String kyuubiNotebookId;
 }

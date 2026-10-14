@@ -8,7 +8,7 @@ import org.hibernate.annotations.UpdateTimestamp;
 import java.time.Instant;
 
 @Entity
-@Table(name = "notebook_folders", schema = "nb_document")
+@Table(name = "notebook_folders")
 @Getter
 @Setter
 @NoArgsConstructor
@@ -17,22 +17,17 @@ import java.time.Instant;
 public class NotebookFolder {
 
     @Id
-    @Column(length = 64, nullable = false)
+    @Column(name = "id", length = 36, nullable = false)
     private String id;
 
-    @Column(nullable = false)
+    @Column(name = "name", length = 255, nullable = false)
     private String name;
 
-    @Column(name = "parent_id", length = 64)
+    @Column(name = "parent_id", length = 36)
     private String parentId;
 
-    @Column(nullable = false, length = 128)
+    @Column(name = "owner", length = 255, nullable = false)
     private String owner;
-
-    @Version
-    @Column(nullable = false)
-    @Builder.Default
-    private Long version = 1L;
 
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)

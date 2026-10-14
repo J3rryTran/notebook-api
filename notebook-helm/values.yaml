@@ -21,13 +21,14 @@ kyuubi:
   connectTimeout: 10s
   requestTimeout: 60s
   sessionOpenTimeout: 10m
-  sessionConfigs:
-    kyuubi.engine.spark.output.mode: NOTEBOOK
   allowedSessionConfigKeys:
     - spark.executor.memory
     - spark.executor.cores
     - spark.sql.shuffle.partitions
   idleSessionTimeout: 30m
+
+auth:
+  mode: oidc # oidc | no-oidc | ldap
 
 oidc:
   issuer: https://10.29.19.56:32004/realms/lakehouse
@@ -36,13 +37,20 @@ oidc:
   scopes: [openid, profile]
   usernameClaim: preferred_username
 
-postgres:
-  host: postgres-postgresql.postgres.svc.cluster.local
-  port: 5432
-  database: notebook
-  username: notebook
+mariadb:
+  host: 10.29.19.52
+  port: 3306
+  database: test
+  username: notebook_api
   existingSecret: notebook-secrets
-  passwordKey: postgres-password
+  passwordKey: db-password
+
+secrets:
+  existingSecret: notebook-secrets
+  internalTokenKey: internal-token
+  authEncryptionKey: auth-encryption-key
+  oidcClientSecretKey: oidc-client-secret
+  ldapManagerPasswordKey: ldap-manager-password
 
 resources:
   requests:

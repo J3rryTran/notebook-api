@@ -84,7 +84,7 @@ dist/
 ├── bin/
 │   └── notebook-api.jar        # Ứng dụng Spring Boot đóng gói hoàn chỉnh (đã kèm UI tĩnh)
 ├── config/
-│   └── application.yml         # Cấu hình môi trường (Kyuubi REST URL, PostgreSQL, Keycloak)
+│   └── application.yml         # Cấu hình môi trường (Kyuubi REST URL, MariaDB database `test`, Auth Mode)
 ├── helm/                       # Helm chart để deploy lên Kubernetes
 │   ├── Chart.yaml
 │   ├── values.yaml

@@ -71,8 +71,26 @@ thị trên giao diện. Kênh tiếp nhận: `<điền kênh của nhóm>`.
 
 ## Cho người phát triển và vận hành
 
+### Cơ sở dữ liệu (MariaDB)
+- **Hệ quản trị CSDL**: Chỉ sử dụng **MariaDB** (bỏ hoàn toàn PostgreSQL và H2).
+- **Database đích**: Database `test` (schema đồng nhất với `self_service`), Flyway tự động migrate `V1` baseline và `V2`, `V3` (`utf8mb4_bin`).
+- **Yêu cầu server MariaDB**: `max_allowed_packet >= 64M` để lưu trữ an toàn các tài liệu JSON notebook lớn.
+
+### 3 Chế độ Xác thực (`notebook.auth.mode`)
+1. **`oidc`** (Mặc định): Keycloak Bearer token delegation trực tiếp tới Kyuubi REST API (`/api/v1/ping` và `/api/v1/sessions`). Không lưu password hay session cookie.
+2. **`no-oidc`**: Đăng nhập Form User/Password, xác thực thông qua Kyuubi ping Basic, lưu phiên mã hóa AES-256-GCM trong bảng `notebook_auth_sessions`.
+3. **`ldap`**: Backend bind trực tiếp LDAP server, tạo cookie phiên `NB_SESSION` và chuyển tiếp Basic tới Kyuubi.
+
+### Kết nối Kyuubi & Quyền Ranger
+- **Giao thức**: Kết nối Kyuubi qua cổng **REST API (10099)**.
+- **Output mode**: Giữ nguyên mặc định `AUTO` của Kyuubi (`kyuubi.engine.spark.output.mode=AUTO`). Backend tự xử lý định dạng bảng SQL và luồng stream/traceback Python.
+- **Phân quyền Ranger**: Spark engine do Kyuubi khởi tạo chạy với danh tính người dùng (`share.level=USER`, `doAs=true`). Mọi phân quyền truy cập dữ liệu do Ranger Spark plugin kiểm soát.
+
 | Tài liệu | Nội dung |
 |---|---|
+| [`plan/mariadb-auth-plan.md`](plan/mariadb-auth-plan.md) | Chi tiết kiến trúc MariaDB, 3 chế độ Auth và Kyuubi REST |
 | [`plan/API-detail.md`](plan/API-detail.md) | Bảng khả năng F01–F47, ánh xạ `.ipynb`, cách gọi Kyuubi → Spark engine |
 | [`plan/Chart.md`](plan/Chart.md) | Plan Helm chart triển khai lên Kubernetes |
 | [`plan/UI-plan.md`](plan/UI-plan.md) | Plan giao diện theo bố cục kiểu Databricks |
+| [`BUILD.md`](BUILD.md) | Hướng dẫn build, kiểm thử và đóng gói dist/ |
+

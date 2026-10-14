@@ -1,6 +1,6 @@
 package com.vtnexus.notebook.store.controller;
 
-import com.vtnexus.notebook.store.model.NotebookCell;
+import com.vtnexus.notebook.store.dto.NotebookCellDto;
 import com.vtnexus.notebook.store.service.NotebookCellService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -20,15 +20,15 @@ public class NotebookCellController {
     }
 
     @GetMapping("/cells")
-    public ResponseEntity<List<NotebookCell>> getCells(@PathVariable("notebookId") String notebookId,
-                                                       @AuthenticationPrincipal Object principal) {
+    public ResponseEntity<List<NotebookCellDto>> getCells(@PathVariable("notebookId") String notebookId,
+                                                          @AuthenticationPrincipal Object principal) {
         return ResponseEntity.ok(cellService.getCells(notebookId, principal.toString()));
     }
 
     @PostMapping("/cells")
-    public ResponseEntity<NotebookCell> createCell(@PathVariable("notebookId") String notebookId,
-                                                   @RequestBody Map<String, Object> body,
-                                                   @AuthenticationPrincipal Object principal) {
+    public ResponseEntity<NotebookCellDto> createCell(@PathVariable("notebookId") String notebookId,
+                                                      @RequestBody Map<String, Object> body,
+                                                      @AuthenticationPrincipal Object principal) {
         String cellType = (String) body.get("cellType");
         String language = (String) body.get("language");
         String source = (String) body.get("source");
@@ -38,17 +38,17 @@ public class NotebookCellController {
     }
 
     @GetMapping("/cells/{cellId}")
-    public ResponseEntity<NotebookCell> getCell(@PathVariable("notebookId") String notebookId,
-                                                @PathVariable("cellId") String cellId,
-                                                @AuthenticationPrincipal Object principal) {
+    public ResponseEntity<NotebookCellDto> getCell(@PathVariable("notebookId") String notebookId,
+                                                   @PathVariable("cellId") String cellId,
+                                                   @AuthenticationPrincipal Object principal) {
         return ResponseEntity.ok(cellService.getCell(notebookId, cellId, principal.toString()));
     }
 
     @PatchMapping("/cells/{cellId}")
-    public ResponseEntity<NotebookCell> updateCell(@PathVariable("notebookId") String notebookId,
-                                                   @PathVariable("cellId") String cellId,
-                                                   @RequestBody Map<String, Object> body,
-                                                   @AuthenticationPrincipal Object principal) {
+    public ResponseEntity<NotebookCellDto> updateCell(@PathVariable("notebookId") String notebookId,
+                                                      @PathVariable("cellId") String cellId,
+                                                      @RequestBody Map<String, Object> body,
+                                                      @AuthenticationPrincipal Object principal) {
         String cellType = (String) body.get("cellType");
         String language = (String) body.get("language");
         String source = (String) body.get("source");
@@ -64,11 +64,11 @@ public class NotebookCellController {
         return ResponseEntity.noContent().build();
     }
 
-    // D-5: Khai báo nguyên URL spec /api/v1/notebooks/{notebookId}/cells:reorder
     @PutMapping(path = "/cells:reorder")
     public ResponseEntity<Void> reorderCells(@PathVariable("notebookId") String notebookId,
                                              @RequestBody Map<String, Object> body,
                                              @AuthenticationPrincipal Object principal) {
+        @SuppressWarnings("unchecked")
         List<String> cellIds = (List<String>) body.get("cellIds");
         Long version = body.get("version") != null ? Long.valueOf(body.get("version").toString()) : null;
         cellService.reorderCells(notebookId, cellIds, version, principal.toString());

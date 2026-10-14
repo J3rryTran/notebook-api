@@ -11,19 +11,22 @@ management:
 
 spring:
   application:
-    name: nb-document-service
+    name: nb-notebook-service
+  datasource:
+    hikari:
+      maximum-pool-size: 10
   flyway:
     enabled: true
-    schemas: nb_document
-    default-schema: nb_document
-    table: flyway_schema_history
     baseline-on-migrate: true
+    baseline-version: 1
+    table: flyway_schema_history
   jpa:
     hibernate:
       ddl-auto: validate
     properties:
       hibernate:
-        default_schema: nb_document
+        jdbc:
+          time_zone: UTC
 
 notebook:
   auth:
@@ -37,6 +40,24 @@ notebook:
       issuer: https://10.29.19.56:32004/realms/lakehouse
       clientId: kyuubi-notebook
       scopes: [openid, profile]
+    ldap:
+      url: ""
+      startTls: false
+      trustStore: ""
+      trustAll: false
+      baseDn: ""
+      userDnPattern: ""
+      userSearchBase: ou=people
+      userSearchFilter: (uid={0})
+      usernameAttribute: uid
+      managerDn: ""
+      managerPassword: ${NOTEBOOK_LDAP_MANAGER_PASSWORD:}
+      groupSearchBase: ou=groups
+      groupMemberAttribute: member
+      adminGroup: ""
+      connectTimeout: 5s
+      readTimeout: 10s
+  encryptionKey: ${NOTEBOOK_AUTH_ENCRYPTION_KEY:}
   internalToken: ${NOTEBOOK_INTERNAL_TOKEN}
   admins: []
   cell:

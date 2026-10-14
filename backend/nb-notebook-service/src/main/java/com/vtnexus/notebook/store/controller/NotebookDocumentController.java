@@ -1,6 +1,7 @@
 package com.vtnexus.notebook.store.controller;
 
 import com.vtnexus.notebook.store.model.Notebook;
+import com.vtnexus.notebook.store.model.NotebookDocument;
 import com.vtnexus.notebook.store.model.NotebookPermission;
 import com.vtnexus.notebook.store.service.IpynbConversionService;
 import com.vtnexus.notebook.store.service.NotebookCellService;
@@ -63,14 +64,15 @@ public class NotebookDocumentController {
                                                            @AuthenticationPrincipal Object principal) {
         Notebook nb = notebookService.getNotebook(notebookId, principal.toString());
         Map<String, Object> res = new HashMap<>();
+        NotebookDocument doc = notebookService.parseDocument(nb.getDocumentJson());
         res.put("id", nb.getId());
         res.put("name", nb.getName());
         res.put("folderId", nb.getFolderId());
         res.put("description", nb.getDescription());
-        res.put("defaultCatalog", nb.getDefaultCatalog());
-        res.put("defaultSchema", nb.getDefaultSchema());
+        res.put("defaultCatalog", doc.getMetadata().get("defaultCatalog"));
+        res.put("defaultSchema", doc.getMetadata().get("defaultSchema"));
         res.put("owner", nb.getOwner());
-        res.put("version", nb.getVersion());
+        res.put("version", nb.getLockVersion());
         res.put("role", notebookService.checkAccess(nb, principal.toString(), "VIEWER"));
 
         if (includeCells) {

@@ -18,7 +18,6 @@ import java.util.*;
 public class NotebookService {
 
     private final NotebookRepository notebookRepository;
-    private final NotebookCellRepository cellRepository;
     private final NotebookPermissionRepository permissionRepository;
     private final NotebookRevisionRepository revisionRepository;
     private final ObjectMapper objectMapper;
@@ -29,7 +28,6 @@ public class NotebookService {
 
     public NotebookService(
             NotebookRepository notebookRepository,
-            NotebookCellRepository cellRepository,
             NotebookPermissionRepository permissionRepository,
             NotebookRevisionRepository revisionRepository,
             ObjectMapper objectMapper,
@@ -37,7 +35,6 @@ public class NotebookService {
             @Value("${notebook.max.page-size:200}") int maxPageSize,
             @Value("${notebook.revision.max-per-notebook:100}") int maxRevisions) {
         this.notebookRepository = notebookRepository;
-        this.cellRepository = cellRepository;
         this.permissionRepository = permissionRepository;
         this.revisionRepository = revisionRepository;
         this.objectMapper = objectMapper;
@@ -46,9 +43,6 @@ public class NotebookService {
         this.maxRevisions = maxRevisions;
     }
 
-    /**
-     * D-1: Kiểm tra quyền theo thứ bậc chuẩn: VIEWER (1) < RUNNER (2) < EDITOR (3) < OWNER (4)
-     */
     public String checkAccess(Notebook notebook, String user, String requiredRole) {
         if (notebook.getOwner().equals(user)) {
             return "OWNER";
@@ -90,49 +84,68 @@ public class NotebookService {
         }
 
         String notebookId = UUID.randomUUID().toString();
-        Notebook notebook = Notebook.builder()
-                .id(notebookId)
-                .name(name.trim())
-                .folderId(folderId)
-                .description(description)
-                .defaultCatalog(defaultCatalog)
-                .defaultSchema(defaultSchema)
-                .owner(owner)
-                .version(1L)
+
+        NotebookDocument doc = NotebookDocument.builder()
+                .schemaVersion(1)
+                .defaultLanguage("SQL")
+                .metadata(new LinkedHashMap<>())
+                .parameters(new ArrayList<>())
+                .cells(new ArrayList<>())
                 .build();
 
-        notebook = notebookRepository.save(notebook);
+        doc.getMetadata().put("name", name.trim());
+        if (description != null) doc.getMetadata().put("description", description);
+        if (defaultCatalog != null) doc.getMetadata().put("defaultCatalog", defaultCatalog);
+        if (defaultSchema != null) doc.getMetadata().put("defaultSchema", defaultSchema);
 
         if (initialCells != null && !initialCells.isEmpty()) {
-            int pos = 0;
             for (Map<String, Object> cellData : initialCells) {
                 String cellType = (String) cellData.getOrDefault("cellType", "CODE");
                 String language = (String) cellData.getOrDefault("language", "SQL");
                 String source = (String) cellData.getOrDefault("source", "");
 
-                NotebookCell cell = NotebookCell.builder()
-                        .id(UUID.randomUUID().toString())
-                        .notebook(notebook)
-                        .cellType(cellType)
-                        .language(language)
-                        .source(source)
-                        .position(pos++)
+                NotebookDocument.CellItem item = NotebookDocument.CellItem.builder()
+                        .id("cell-" + UUID.randomUUID())
+                        .type(cellType != null ? cellType.toUpperCase() : "CODE")
+                        .language(language != null ? language.toUpperCase() : "SQL")
+                        .source(source != null ? source : "")
+                        .metadata(new LinkedHashMap<>())
                         .build();
-                cellRepository.save(cell);
+                doc.getCells().add(item);
             }
         } else {
-            NotebookCell defaultCell = NotebookCell.builder()
-                    .id(UUID.randomUUID().toString())
-                    .notebook(notebook)
-                    .cellType("CODE")
+            NotebookDocument.CellItem defaultCell = NotebookDocument.CellItem.builder()
+                    .id("cell-" + UUID.randomUUID())
+                    .type("CODE")
                     .language("SQL")
                     .source("SELECT 1")
-                    .position(0)
+                    .metadata(new LinkedHashMap<>())
                     .build();
-            cellRepository.save(defaultCell);
+            doc.getCells().add(defaultCell);
         }
 
-        snapshotRevision(notebookId, "Initial creation", owner, false);
+        String documentJson;
+        try {
+            documentJson = objectMapper.writeValueAsString(doc);
+        } catch (Exception e) {
+            throw new NotebookApiException("INTERNAL_ERROR", "Failed to serialize notebook document: " + e.getMessage(), HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+
+        Notebook notebook = Notebook.builder()
+                .id(notebookId)
+                .name(name.trim())
+                .folderId(folderId)
+                .description(description)
+                .owner(owner)
+                .notebookFormat("SQLLAB_JSON_V1")
+                .defaultLanguage("SQL")
+                .documentJson(documentJson)
+                .currentRevision(1L)
+                .lockVersion(0L)
+                .build();
+
+        notebook = notebookRepository.save(notebook);
+        snapshotRevision(notebookId, "Initial creation", owner, "MANUAL");
         return notebook;
     }
 
@@ -143,7 +156,6 @@ public class NotebookService {
         return notebook;
     }
 
-    // D-2: Bỏ tham số owner, trả về notebook user sở hữu HOẶC được cấp quyền
     public List<Notebook> listNotebooks(String folderId, int limit, String user) {
         PageRequest page = PageRequest.of(0, Math.min(limit > 0 ? limit : 50, maxPageSize));
         if (folderId != null) {
@@ -158,27 +170,36 @@ public class NotebookService {
         Notebook notebook = getNotebook(notebookId, user);
         checkAccess(notebook, user, "EDITOR");
 
-        if (version != null && !notebook.getVersion().equals(version)) {
+        if (version != null && !notebook.getLockVersion().equals(version)) {
             throw new NotebookApiException("VERSION_CONFLICT", "Notebook was modified concurrently", HttpStatus.CONFLICT);
         }
 
         if (name != null && !name.isBlank()) notebook.setName(name.trim());
         if (description != null) notebook.setDescription(description);
-        if (defaultCatalog != null) notebook.setDefaultCatalog(defaultCatalog);
-        if (defaultSchema != null) notebook.setDefaultSchema(defaultSchema);
 
-        notebook.setVersion(notebook.getVersion() + 1);
+        // Cập nhật metadata trong documentJson
+        try {
+            NotebookDocument doc = parseDocument(notebook.getDocumentJson());
+            if (name != null && !name.isBlank()) doc.getMetadata().put("name", name.trim());
+            if (description != null) doc.getMetadata().put("description", description);
+            if (defaultCatalog != null) doc.getMetadata().put("defaultCatalog", defaultCatalog);
+            if (defaultSchema != null) doc.getMetadata().put("defaultSchema", defaultSchema);
+            notebook.setDocumentJson(objectMapper.writeValueAsString(doc));
+        } catch (Exception e) {
+            // Không ngắt nếu parse doc lỗi nhẹ, giữ nguyên document_json
+        }
+
+        notebook.setCurrentRevision(notebook.getCurrentRevision() + 1);
         Notebook saved = notebookRepository.save(notebook);
-        snapshotRevision(notebookId, "Update notebook metadata", user, false);
+        snapshotRevision(notebookId, "Update notebook metadata", user, "MANUAL");
         return saved;
     }
 
-    // D-4: Xóa mềm - đánh dấu deletedAt để giải phóng path/tên
     public void deleteNotebook(String notebookId, Long version, String user) {
         Notebook notebook = getNotebook(notebookId, user);
         checkAccess(notebook, user, "OWNER");
 
-        if (version != null && !notebook.getVersion().equals(version)) {
+        if (version != null && !notebook.getLockVersion().equals(version)) {
             throw new NotebookApiException("VERSION_CONFLICT", "Notebook was modified concurrently", HttpStatus.CONFLICT);
         }
 
@@ -186,44 +207,31 @@ public class NotebookService {
         notebookRepository.save(notebook);
     }
 
-    // D-9: Snapshot revision không nuốt lỗi, ném lỗi rõ ràng nếu thất bại
-    public void snapshotRevision(String notebookId, String reason, String user, boolean isProtected) {
+    public void snapshotRevision(String notebookId, String reason, String user, String revisionType) {
         try {
+            Notebook notebook = notebookRepository.findById(notebookId).orElse(null);
+            if (notebook == null) return;
+
             Long maxRev = revisionRepository.findMaxRevisionNumberByNotebookId(notebookId);
             long nextRev = (maxRev == null ? 1L : maxRev + 1L);
 
-            List<NotebookCell> cells = cellRepository.findByNotebookIdOrderByPositionAsc(notebookId);
-            List<Map<String, Object>> cellDtos = new ArrayList<>();
-            for (NotebookCell c : cells) {
-                cellDtos.add(Map.of(
-                        "id", c.getId(),
-                        "cellType", c.getCellType(),
-                        "language", c.getLanguage(),
-                        "source", c.getSource(),
-                        "position", c.getPosition()
-                ));
-            }
-
-            Map<String, Object> doc = Map.of("revision", nextRev, "cells", cellDtos);
-            String docJson = objectMapper.writeValueAsString(doc);
-
             NotebookRevision revision = NotebookRevision.builder()
+                    .id(UUID.randomUUID().toString())
                     .notebookId(notebookId)
                     .revisionNumber(nextRev)
-                    .reason(reason)
-                    .isProtected(isProtected)
-                    .documentJson(docJson)
-                    .createdBy(user)
+                    .revisionType(revisionType != null ? revisionType : "AUTO")
+                    .documentJson(notebook.getDocumentJson())
+                    .createdBy(user != null ? user : "system")
                     .build();
             revisionRepository.save(revision);
 
-            // P2-5: Dọn dẹp revision cũ không bảo vệ vượt maxRevisions
-            long unprotectedCount = revisionRepository.countUnprotectedRevisions(notebookId);
-            if (unprotectedCount > maxRevisions) {
+            // Dọn dẹp revision AUTO vượt maxRevisions
+            long autoCount = revisionRepository.countAutoRevisions(notebookId);
+            if (autoCount > maxRevisions) {
                 List<NotebookRevision> revs = revisionRepository.findByNotebookIdOrderByRevisionNumberDesc(
                         notebookId, PageRequest.of(maxRevisions, 50));
                 for (NotebookRevision r : revs) {
-                    if (!r.getIsProtected()) {
+                    if ("AUTO".equalsIgnoreCase(r.getRevisionType())) {
                         revisionRepository.delete(r);
                     }
                 }
@@ -236,7 +244,6 @@ public class NotebookService {
         }
     }
 
-    // D-3: Permissions API (Chỉ OWNER được thao tác)
     public List<NotebookPermission> getPermissions(String notebookId, String user) {
         Notebook notebook = getNotebook(notebookId, user);
         checkAccess(notebook, user, "OWNER");
@@ -283,5 +290,20 @@ public class NotebookService {
             }
         }
         return savedList;
+    }
+
+    public NotebookDocument parseDocument(String documentJson) {
+        if (documentJson == null || documentJson.isBlank()) {
+            return NotebookDocument.builder()
+                    .schemaVersion(1)
+                    .defaultLanguage("SQL")
+                    .cells(new ArrayList<>())
+                    .build();
+        }
+        try {
+            return objectMapper.readValue(documentJson, NotebookDocument.class);
+        } catch (Exception e) {
+            throw new NotebookApiException("UNSUPPORTED_FORMAT", "Failed to parse document JSON: " + e.getMessage(), HttpStatus.CONFLICT);
+        }
     }
 }

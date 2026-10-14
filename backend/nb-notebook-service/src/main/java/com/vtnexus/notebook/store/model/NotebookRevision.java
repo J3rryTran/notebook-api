@@ -7,7 +7,7 @@ import org.hibernate.annotations.CreationTimestamp;
 import java.time.Instant;
 
 @Entity
-@Table(name = "notebook_revisions", schema = "nb_document")
+@Table(name = "notebook_revisions")
 @Getter
 @Setter
 @NoArgsConstructor
@@ -16,26 +16,23 @@ import java.time.Instant;
 public class NotebookRevision {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+    @Column(name = "id", length = 36, nullable = false)
+    private String id;
 
-    @Column(name = "notebook_id", length = 64, nullable = false)
+    @Column(name = "notebook_id", length = 36, nullable = false)
     private String notebookId;
 
     @Column(name = "revision_number", nullable = false)
     private Long revisionNumber;
 
-    @Column(name = "reason")
-    private String reason;
-
-    @Column(name = "is_protected", nullable = false)
-    @Builder.Default
-    private Boolean isProtected = false;
-
-    @Column(name = "document_json", columnDefinition = "TEXT", nullable = false)
+    @Column(name = "document_json", columnDefinition = "LONGTEXT", nullable = false)
     private String documentJson;
 
-    @Column(name = "created_by", length = 128, nullable = false)
+    @Column(name = "revision_type", length = 30, nullable = false)
+    @Builder.Default
+    private String revisionType = "AUTO";
+
+    @Column(name = "created_by", length = 255, nullable = false)
     private String createdBy;
 
     @CreationTimestamp

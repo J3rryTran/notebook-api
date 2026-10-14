@@ -6,8 +6,7 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.vtnexus.notebook.common.exception.NotebookApiException;
 import com.vtnexus.notebook.store.model.Notebook;
-import com.vtnexus.notebook.store.model.NotebookCell;
-import com.vtnexus.notebook.store.repository.NotebookCellRepository;
+import com.vtnexus.notebook.store.model.NotebookDocument;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -19,21 +18,17 @@ public class IpynbConversionService {
 
     private final ObjectMapper objectMapper;
     private final NotebookService notebookService;
-    private final NotebookCellRepository cellRepository;
     private final int maxImportSize;
 
     public IpynbConversionService(
             ObjectMapper objectMapper,
             NotebookService notebookService,
-            NotebookCellRepository cellRepository,
             @Value("${notebook.import.max-size:16777216}") int maxImportSize) {
         this.objectMapper = objectMapper;
         this.notebookService = notebookService;
-        this.cellRepository = cellRepository;
         this.maxImportSize = maxImportSize;
     }
 
-    // D-6 & D-8: Import đọc metadata.kyuubi.language TRƯỚC, áp giới hạn dung lượng import
     public Notebook importNotebook(String format, String name, String folderId, String contentJson, String user) {
         if (contentJson != null && contentJson.getBytes().length > maxImportSize) {
             throw new NotebookApiException("PAYLOAD_TOO_LARGE", "Import payload exceeds size limit of " + maxImportSize + " bytes", HttpStatus.PAYLOAD_TOO_LARGE);
@@ -65,7 +60,6 @@ public class IpynbConversionService {
                         }
                     }
 
-                    // D-6: Đọc metadata.kyuubi.language TRƯỚC, magic dòng đầu là fallback
                     String language = null;
                     JsonNode metaNode = cNode.get("metadata");
                     if (metaNode != null && metaNode.has("kyuubi") && metaNode.get("kyuubi").has("language")) {
@@ -102,7 +96,6 @@ public class IpynbConversionService {
         }
     }
 
-    // D-7: includeOutputs=true chỉ cho phép OWNER
     public String exportNotebook(String notebookId, boolean includeOutputs, String user) {
         Notebook notebook = notebookService.getNotebook(notebookId, user);
         if (includeOutputs) {
@@ -112,7 +105,7 @@ public class IpynbConversionService {
             }
         }
 
-        List<NotebookCell> cells = cellRepository.findByNotebookIdOrderByPositionAsc(notebookId);
+        NotebookDocument doc = notebookService.parseDocument(notebook.getDocumentJson());
 
         ObjectNode root = objectMapper.createObjectNode();
         root.put("nbformat", 4);
@@ -128,10 +121,10 @@ public class IpynbConversionService {
         languageInfo.put("name", "python");
 
         ArrayNode cellsNode = root.putArray("cells");
-        for (NotebookCell cell : cells) {
+        for (NotebookDocument.CellItem cell : doc.getCells()) {
             ObjectNode c = cellsNode.addObject();
             c.put("id", cell.getId());
-            c.put("cell_type", cell.getCellType().toLowerCase());
+            c.put("cell_type", cell.getType().toLowerCase());
 
             ObjectNode cMeta = c.putObject("metadata");
             ObjectNode kyuubiMeta = cMeta.putObject("kyuubi");
@@ -145,9 +138,14 @@ public class IpynbConversionService {
                 srcArr.add(line);
             }
 
-            if ("CODE".equals(cell.getCellType())) {
-                c.put("execution_count", cell.getExecutionCount());
-                c.putArray("outputs"); // Outputs are not stored in document cell per decoupled model
+            if ("CODE".equalsIgnoreCase(cell.getType())) {
+                Object execCount = cell.getMetadata() != null ? cell.getMetadata().get("executionCount") : null;
+                if (execCount instanceof Number) {
+                    c.put("execution_count", ((Number) execCount).intValue());
+                } else {
+                    c.putNull("execution_count");
+                }
+                c.putArray("outputs");
             }
         }
 

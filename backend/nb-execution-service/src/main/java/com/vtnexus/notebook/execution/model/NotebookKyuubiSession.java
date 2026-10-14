@@ -8,33 +8,33 @@ import org.hibernate.annotations.UpdateTimestamp;
 import java.time.Instant;
 
 @Entity
-@Table(name = "notebook_sessions", schema = "nb_execution")
+@Table(name = "notebook_kyuubi_sessions")
 @Getter
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-public class NotebookSession {
+public class NotebookKyuubiSession {
 
     @Id
-    @Column(length = 64, nullable = false)
+    @Column(name = "id", length = 36, nullable = false)
     private String id;
 
-    @Column(name = "notebook_id", length = 64, nullable = false)
+    @Column(name = "notebook_id", length = 36, nullable = false)
     private String notebookId;
 
-    @Column(name = "kyuubi_session_id", length = 64)
+    @Column(name = "user_id", length = 255, nullable = false)
+    private String userId;
+
+    @Column(name = "kyuubi_session_id", length = 64, nullable = false)
     private String kyuubiSessionId;
 
     @Column(name = "kyuubi_instance", length = 256)
     private String kyuubiInstance;
 
-    @Column(name = "user_id", length = 128, nullable = false)
-    private String userId;
-
-    @Column(length = 32, nullable = false)
+    @Column(name = "status", length = 32, nullable = false)
     @Builder.Default
-    private String status = "INITIALIZING"; // INITIALIZING, READY, BUSY, LOST, CLOSED
+    private String status = "INITIALIZING";
 
     @Column(name = "execution_count_seq", nullable = false)
     @Builder.Default
@@ -47,4 +47,8 @@ public class NotebookSession {
     @UpdateTimestamp
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
+
+    @Column(name = "last_used_at", nullable = false)
+    @Builder.Default
+    private Instant lastUsedAt = Instant.now();
 }

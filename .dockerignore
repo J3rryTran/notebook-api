@@ -1,0 +1,23 @@
+# Git and IDE
+.git/
+.gitignore
+.idea/
+*.iml
+.vscode/
+
+# Maven build outputs (giữ lại file *.jar để copy vào image)
+**/target/*
+!**/target/*.jar
+
+# Distribution archives
+dist/
+dist.tar.gz
+
+# Node / Frontend temporary
+node_modules/
+dist/
+npm-debug.log
+
+# Miscellaneous
+*.log
+scratch/

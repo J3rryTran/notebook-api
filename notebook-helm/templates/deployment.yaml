@@ -29,17 +29,39 @@ spec:
           env:
             - name: SPRING_PROFILES_ACTIVE
               value: "prod"
+            - name: NOTEBOOK_AUTH_MODE
+              value: {{ .Values.auth.mode | default "oidc" | quote }}
             - name: KYUUBI_REST_URL
               value: {{ .Values.kyuubi.restUrl | quote }}
             - name: SPRING_DATASOURCE_URL
-              value: "jdbc:postgresql://{{ .Values.postgres.host }}:{{ .Values.postgres.port }}/{{ .Values.postgres.database }}"
+              value: "jdbc:mariadb://{{ .Values.mariadb.host }}:{{ .Values.mariadb.port }}/{{ .Values.mariadb.database }}?useUnicode=true&characterEncoding=utf8&connectionTimeZone=UTC"
             - name: SPRING_DATASOURCE_USERNAME
-              value: {{ .Values.postgres.username | quote }}
+              value: {{ .Values.mariadb.username | quote }}
             - name: SPRING_DATASOURCE_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.postgres.existingSecret }}
-                  key: {{ .Values.postgres.passwordKey }}
+                  name: {{ .Values.mariadb.existingSecret }}
+                  key: {{ .Values.mariadb.passwordKey }}
+            - name: NOTEBOOK_INTERNAL_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.existingSecret }}
+                  key: {{ .Values.secrets.internalTokenKey }}
+            {{- if ne .Values.auth.mode "oidc" }}
+            - name: NOTEBOOK_AUTH_ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.existingSecret }}
+                  key: {{ .Values.secrets.authEncryptionKey }}
+            {{- end }}
+            {{- if eq .Values.auth.mode "ldap" }}
+            - name: NOTEBOOK_LDAP_MANAGER_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.existingSecret }}
+                  key: {{ .Values.secrets.ldapManagerPasswordKey }}
+                  optional: true
+            {{- end }}
           livenessProbe:
             httpGet:
               path: /actuator/health/liveness

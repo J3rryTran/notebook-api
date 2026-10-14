@@ -47,12 +47,19 @@ public class KyuubiRestClient {
         this.defaultBaseUrl = defaultBaseUrl.endsWith("/") ? defaultBaseUrl.substring(0, defaultBaseUrl.length() - 1) : defaultBaseUrl;
         this.pinToInstance = pinToInstance;
         this.allowedSessionConfigKeys = allowedSessionConfigKeys;
-        this.defaultSessionConfigs = Map.of("kyuubi.engine.spark.output.mode", "NOTEBOOK");
+        this.defaultSessionConfigs = Map.of("kyuubi.session.engine.launch.async", "true");
         this.restTemplate = builder
                 .setConnectTimeout(Duration.ofSeconds(10))
                 .setReadTimeout(Duration.ofSeconds(60))
                 .build();
         this.objectMapper = objectMapper;
+    }
+
+    private String resolveAuth(String userAuthHeader) {
+        if (userAuthHeader != null && !userAuthHeader.isBlank()) {
+            return userAuthHeader;
+        }
+        return com.vtnexus.notebook.common.auth.KyuubiCredentialHolder.getAuthHeader();
     }
 
     private String getBaseUrl(String instance) {
@@ -63,9 +70,10 @@ public class KyuubiRestClient {
     }
 
     public Map<String, String> openSession(String userAuthHeader, Map<String, String> extraConfigs) {
+        String auth = resolveAuth(userAuthHeader);
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
-        if (userAuthHeader != null) headers.set(HttpHeaders.AUTHORIZATION, userAuthHeader);
+        if (auth != null) headers.set(HttpHeaders.AUTHORIZATION, auth);
 
         Map<String, String> configs = new HashMap<>(defaultSessionConfigs);
         if (extraConfigs != null) {

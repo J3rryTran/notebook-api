@@ -1,14 +1,11 @@
 spring:
-  config:
-    activate:
-      on-profile: dev
   datasource:
-    url: jdbc:h2:mem:nb_doc_db;DB_CLOSE_DELAY=-1;MODE=PostgreSQL;INIT=CREATE SCHEMA IF NOT EXISTS nb_document
-    username: sa
-    password: ""
-  jpa:
-    hibernate:
-      ddl-auto: update
+    url: jdbc:mariadb://localhost:3306/test?useUnicode=true&characterEncoding=utf8&connectionTimeZone=UTC
+    username: notebook_api
+    password: devpassword
 
 notebook:
-  internalToken: "dev-internal-secret-token"
+  auth:
+    allowUnverified: true
+  internalToken: dev-internal-token-secret-12345
+  encryptionKey: MTIzNDU2Nzg5MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTI=
