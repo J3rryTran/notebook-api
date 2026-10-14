@@ -19,7 +19,7 @@ public class NotebookExecutionLog {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "cell_run_id", length = 36, nullable = false)
+    @Column(name = "cell_run_id", columnDefinition = "CHAR(36)", length = 36, nullable = false)
     private String cellRunId;
 
     @Column(name = "sequence", nullable = false)

@@ -17,10 +17,10 @@ import java.time.Instant;
 public class NotebookKyuubiSession {
 
     @Id
-    @Column(name = "id", length = 36, nullable = false)
+    @Column(name = "id", columnDefinition = "CHAR(36)", length = 36, nullable = false)
     private String id;
 
-    @Column(name = "notebook_id", length = 36, nullable = false)
+    @Column(name = "notebook_id", columnDefinition = "CHAR(36)", length = 36, nullable = false)
     private String notebookId;
 
     @Column(name = "user_id", length = 255, nullable = false)

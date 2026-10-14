@@ -16,10 +16,10 @@ import java.time.Instant;
 public class NotebookRun {
 
     @Id
-    @Column(name = "id", length = 36, nullable = false)
+    @Column(name = "id", columnDefinition = "CHAR(36)", length = 36, nullable = false)
     private String id;
 
-    @Column(name = "notebook_id", length = 36, nullable = false)
+    @Column(name = "notebook_id", columnDefinition = "CHAR(36)", length = 36, nullable = false)
     private String notebookId;
 
     @Column(name = "run_type", length = 30, nullable = false)
@@ -79,6 +79,6 @@ public class NotebookRun {
     @Column(name = "notebook_saved_at")
     private Instant notebookSavedAt;
 
-    @Column(name = "kyuubi_session_ref", length = 36)
+    @Column(name = "kyuubi_session_ref", columnDefinition = "CHAR(36)", length = 36)
     private String kyuubiSessionRef;
 }

@@ -17,13 +17,13 @@ import java.time.Instant;
 public class NotebookFolder {
 
     @Id
-    @Column(name = "id", length = 36, nullable = false)
+    @Column(name = "id", columnDefinition = "CHAR(36)", length = 36, nullable = false)
     private String id;
 
     @Column(name = "name", length = 255, nullable = false)
     private String name;
 
-    @Column(name = "parent_id", length = 36)
+    @Column(name = "parent_id", columnDefinition = "CHAR(36)", length = 36)
     private String parentId;
 
     @Column(name = "owner", length = 255, nullable = false)

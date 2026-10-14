@@ -15,7 +15,7 @@ import java.time.Instant;
 public class AppUser {
 
     @Id
-    @Column(name = "id", length = 36, nullable = false)
+    @Column(name = "id", columnDefinition = "CHAR(36)", length = 36, nullable = false)
     private String id;
 
     @Column(name = "username", length = 255, nullable = false)

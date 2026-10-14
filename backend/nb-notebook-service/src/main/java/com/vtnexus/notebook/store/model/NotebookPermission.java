@@ -19,7 +19,7 @@ public class NotebookPermission {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "notebook_id", length = 36, nullable = false)
+    @Column(name = "notebook_id", columnDefinition = "CHAR(36)", length = 36, nullable = false)
     private String notebookId;
 
     @Column(name = "principal_type", length = 32, nullable = false)

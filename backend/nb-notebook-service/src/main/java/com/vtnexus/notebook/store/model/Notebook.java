@@ -17,10 +17,10 @@ import java.time.Instant;
 public class Notebook {
 
     @Id
-    @Column(name = "id", length = 36, nullable = false)
+    @Column(name = "id", columnDefinition = "CHAR(36)", length = 36, nullable = false)
     private String id;
 
-    @Column(name = "node_id", length = 36)
+    @Column(name = "node_id", columnDefinition = "CHAR(36)", length = 36)
     private String nodeId;
 
     @Column(name = "notebook_format", length = 30, nullable = false)
@@ -51,7 +51,7 @@ public class Notebook {
     @Builder.Default
     private String owner = "";
 
-    @Column(name = "folder_id", length = 36)
+    @Column(name = "folder_id", columnDefinition = "CHAR(36)", length = 36)
     private String folderId;
 
     @Column(name = "description", columnDefinition = "LONGTEXT")

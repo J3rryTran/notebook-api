@@ -15,10 +15,10 @@ import java.time.Instant;
 public class NotebookCellRun {
 
     @Id
-    @Column(name = "id", length = 36, nullable = false)
+    @Column(name = "id", columnDefinition = "CHAR(36)", length = 36, nullable = false)
     private String id;
 
-    @Column(name = "notebook_run_id", length = 36, nullable = false)
+    @Column(name = "notebook_run_id", columnDefinition = "CHAR(36)", length = 36, nullable = false)
     private String notebookRunId;
 
     @Column(name = "cell_id", length = 100, nullable = false)

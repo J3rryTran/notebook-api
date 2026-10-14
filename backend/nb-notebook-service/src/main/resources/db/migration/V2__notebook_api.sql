@@ -41,8 +41,7 @@ CREATE TABLE IF NOT EXISTS notebook_permissions (
   role VARCHAR(32) NOT NULL,
   created_at DATETIME(6) NOT NULL,
   PRIMARY KEY (id),
-  UNIQUE KEY uk_np_notebook_principal (notebook_id, principal_id),
-  CONSTRAINT fk_np_notebook FOREIGN KEY (notebook_id) REFERENCES notebooks (id) ON DELETE CASCADE
+  UNIQUE KEY uk_np_notebook_principal (notebook_id, principal_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
 -- 6. Bảng notebook_kyuubi_sessions
@@ -69,8 +68,7 @@ CREATE TABLE IF NOT EXISTS notebook_execution_logs (
   line LONGTEXT NOT NULL,
   created_at DATETIME(6) NOT NULL,
   PRIMARY KEY (id),
-  UNIQUE KEY uk_nel_cell_seq (cell_run_id, sequence),
-  CONSTRAINT fk_nel_cell_run FOREIGN KEY (cell_run_id) REFERENCES notebook_cell_runs (id) ON DELETE CASCADE
+  UNIQUE KEY uk_nel_cell_seq (cell_run_id, sequence)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
 -- 8. Bảng notebook_auth_sessions
