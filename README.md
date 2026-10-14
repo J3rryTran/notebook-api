@@ -73,22 +73,56 @@ thị trên giao diện. Kênh tiếp nhận: `<điền kênh của nhóm>`.
 
 ### Cơ sở dữ liệu (MariaDB)
 - **Hệ quản trị CSDL**: Chỉ sử dụng **MariaDB** (bỏ hoàn toàn PostgreSQL và H2).
-- **Database đích**: Database `test` (schema đồng nhất với `self_service`), Flyway tự động migrate `V1` baseline và `V2`, `V3` (`utf8mb4_bin`).
+- **Database đích**: Database `test` (schema đồng nhất với `self_service`), Flyway tự động migrate `V1` baseline và `V2`–`V5` (`utf8mb4_bin`).
 - **Yêu cầu server MariaDB**: `max_allowed_packet >= 64M` để lưu trữ an toàn các tài liệu JSON notebook lớn.
 
 ### 3 Chế độ Xác thực (`notebook.auth.mode`)
-1. **`oidc`** (Mặc định): Keycloak Bearer token delegation trực tiếp tới Kyuubi REST API (`/api/v1/ping` và `/api/v1/sessions`). Không lưu password hay session cookie.
-2. **`no-oidc`**: Đăng nhập Form User/Password, xác thực thông qua Kyuubi ping Basic, lưu phiên mã hóa AES-256-GCM trong bảng `notebook_auth_sessions`.
-3. **`ldap`**: Backend bind trực tiếp LDAP server, tạo cookie phiên `NB_SESSION` và chuyển tiếp Basic tới Kyuubi.
+1. **`oidc`** (Mặc định trong môi trường production / lakehouse):
+   - Đăng nhập qua Keycloak Authorization Code Flow kèm PKCE (`oidc-client-ts` tự host tại `frontend/public/vendor/`).
+   - Token người dùng được chuyển tiếp trực tiếp tới Kyuubi REST API (`/api/v1/sessions`).
+   - Không lưu cookie phiên, không lưu credential trên backend.
+   - Khi có proxy user (`ranger_username ≠ username`), backend tự động lấy client_credentials token của service account `notebook-api` để mở session và truyền `hive.server2.proxy.user`.
+2. **`no-oidc`**:
+   - Dành cho môi trường nội bộ hoặc dev không có OIDC/LDAP.
+   - Đăng nhập Form User/Password, xác thực thông qua Kyuubi `/api/v1/ping` (HTTP Basic).
+   - Lưu phiên mã hóa AES-256-GCM trong bảng `notebook_auth_sessions`.
+   - Bảo vệ CSRF qua Double Submit Cookie (`XSRF-TOKEN` / `X-XSRF-TOKEN`).
+   - Định kỳ recheck kiểm tra tính hợp lệ của session với Kyuubi.
+3. **`ldap`**:
+   - Backend bind trực tiếp LDAP server (`ldap://` hoặc `ldaps://`), kiểm tra mật khẩu và tìm tên chuẩn (`usernameAttribute`).
+   - Kiểm tra group admin qua `adminGroup`.
+   - Lưu phiên trong `notebook_auth_sessions` và chuyển tiếp Basic tới Kyuubi.
 
-### Kết nối Kyuubi & Quyền Ranger
+### Kết nối Kyuubi & Định dạng Output
 - **Giao thức**: Kết nối Kyuubi qua cổng **REST API (10099)**.
-- **Output mode**: Giữ nguyên mặc định `AUTO` của Kyuubi (`kyuubi.engine.spark.output.mode=AUTO`). Backend tự xử lý định dạng bảng SQL và luồng stream/traceback Python.
-- **Phân quyền Ranger**: Spark engine do Kyuubi khởi tạo chạy với danh tính người dùng (`share.level=USER`, `doAs=true`). Mọi phân quyền truy cập dữ liệu do Ranger Spark plugin kiểm soát.
+- **Output mode**: Giữ nguyên mặc định `AUTO` của Kyuubi (`kyuubi.engine.spark.output.mode=AUTO`).
+  - **SQL**: Backend đọc `resultsetmetadata` và `rowset`, chuyển đổi thành execute_result dạng bảng JSON chuẩn (`application/vnd.notebook.table+json`) và bảng chữ thuần ASCII (tối đa 50 dòng) để export `.ipynb`.
+  - **Python**: Đọc stream stdout; trích xuất `ename`, `evalue`, và `traceback` (tối đa 200 dòng) khi có exception (ví dụ `NameError`, `AnalysisException`).
+  - **Giới hạn hiện tại**: Chưa hỗ trợ hiển thị hình ảnh đồ thị sinh động (HTML/SVG/PNG) trực tiếp từ Spark engine qua Kyuubi REST (chỉ hỗ trợ bảng và text).
+
+### Phân quyền Ranger & Proxy User (`ranger_username`)
+- **Tích hợp Ranger**: Kyuubi chạy với `share.level=USER`, `doAs=true`. Spark engine áp dụng chính xác quyền phân bổ theo username người dùng trong Ranger.
+- **Proxy User**:
+  - Khi `app_users` định nghĩa `ranger_username` khác với `username` đăng nhập (ví dụ tài khoản dịch vụ hoặc alias phân quyền), `execution-service` gọi `notebook-service` (`GET /internal/users/{username}/ranger-username`) để tra cứu (kết quả được cache Caffeine 5 phút).
+  - Ở mode OIDC: Execution-service dùng `NOTEBOOK_OIDC_CLIENT_SECRET` lấy token của `notebook-api` từ Keycloak, mở session Kyuubi với cấu hình `hive.server2.proxy.user: <ranger_username>` và đánh dấu session `proxied=true`. Mọi thao tác submit/sync sau đó đều dùng token dịch vụ để bảo đảm quyền ủy quyền.
+  - Ở mode no-oidc/ldap: Nếu có sự khác biệt, hệ thống ghi log `WARN` và chạy trực tiếp bằng user đăng nhập.
+
+### Cấu hình Keycloak Client
+Để vận hành OIDC và Proxy User trên Keycloak realm `lakehouse`:
+1. **Client Frontend / User (`kyuubi-notebook`)**:
+   - Client Type: **Public** (Access Type: `public`).
+   - Standard Flow Enabled: `true` (Authorization Code Flow với PKCE S256).
+   - Valid Redirect URIs: `http://<domain-or-ip>:32380/auth/callback`.
+   - Web Origins: `+` hoặc `http://<domain-or-ip>:32380`.
+2. **Client Backend / Service Account (`notebook-api`)**:
+   - Client Type: **Confidential** (Client authentication: `ON`).
+   - Service Accounts Enabled: `true` (Direct Access Grants / Service Account Roles).
+   - Cung cấp Secret qua biến môi trường `NOTEBOOK_OIDC_CLIENT_SECRET`.
 
 | Tài liệu | Nội dung |
 |---|---|
 | [`plan/mariadb-auth-plan.md`](plan/mariadb-auth-plan.md) | Chi tiết kiến trúc MariaDB, 3 chế độ Auth và Kyuubi REST |
+| [`plan/huong-dan-sua-vong-3.md`](plan/huong-dan-sua-vong-3.md) | Kế hoạch sửa lỗi vòng 3 và hướng dẫn nghiệm thu |
 | [`plan/API-detail.md`](plan/API-detail.md) | Bảng khả năng F01–F47, ánh xạ `.ipynb`, cách gọi Kyuubi → Spark engine |
 | [`plan/Chart.md`](plan/Chart.md) | Plan Helm chart triển khai lên Kubernetes |
 | [`plan/UI-plan.md`](plan/UI-plan.md) | Plan giao diện theo bố cục kiểu Databricks |
