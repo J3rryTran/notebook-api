@@ -11,7 +11,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 IMAGE_NAME="${1:-docker.io/j3rrytran/notebook:0.1.0}"
-MAVEN_BIN="${ROOT_DIR}/apache-maven-3.9.11/bin/mvn"
+MAVEN_BIN="${ROOT_DIR}/backend/mvnw"
 
 GREEN='\033[0;32m'
 BLUE='\033[0;34m'
@@ -20,7 +20,9 @@ NC='\033[0m'
 
 echo -e "${BLUE}[1/2] Biên dịch và đóng gói JAR ở host...${NC}"
 cd "${ROOT_DIR}/backend"
+chmod +x "${MAVEN_BIN}"
 "${MAVEN_BIN}" clean package -DskipTests
+
 
 echo -e "${BLUE}[2/2] Build Docker image (1 stage): ${IMAGE_NAME}...${NC}"
 cd "${ROOT_DIR}"

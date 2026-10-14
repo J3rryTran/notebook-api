@@ -10,6 +10,10 @@ RUN apt-get update && \
 
 COPY --from=trungtmba11093/java_env:java17-v0 /usr/bin/jdk-17.0.12 /usr/bin/jdk-17.0.12
 
+# Tạo user notebook (uid 10001) không quyền root
+RUN groupadd -g 10001 notebook && \
+    useradd -u 10001 -g notebook -m -s /bin/bash notebook
+
 WORKDIR /app
 
 COPY backend/nb-notebook-service/target/nb-notebook-service-*.jar /app/nb-notebook-service.jar
@@ -17,9 +21,15 @@ COPY backend/nb-execution-service/target/nb-execution-service-*.jar /app/nb-exec
 
 COPY frontend/public/ /usr/share/nginx/html/
 COPY docker/nginx.conf /etc/nginx/nginx.conf
-
 COPY docker/entrypoint.sh /app/entrypoint.sh
-RUN chmod +x /app/entrypoint.sh
+COPY docker/health-probe.sh /app/health-probe.sh
+
+RUN chmod +x /app/entrypoint.sh /app/health-probe.sh && \
+    chown -R notebook:notebook /app /usr/share/nginx/html && \
+    chown -R notebook:notebook /var/log/nginx /var/lib/nginx
+
+USER 10001
+
 EXPOSE 8080
 
 ENTRYPOINT ["/app/entrypoint.sh"]

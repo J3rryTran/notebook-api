@@ -27,7 +27,7 @@ java -version
 
 ## 2. Đóng gói tự động nhanh nhất bằng Script (Khuyến nghị)
 
-Script [`scripts/build-dist.sh`](file:///mnt/d/DOC/VT/notebook-api/scripts/build-dist.sh) được cấu hình sử dụng trực tiếp công cụ Maven tại thư mục `apache-maven-3.9.11/bin/mvn`:
+Script [`scripts/build-dist.sh`](scripts/build-dist.sh) được cấu hình sử dụng Maven Wrapper `backend/mvnw`:
 
 ```bash
 # Chạy script tự động (kế thừa JAVA_HOME bạn vừa gán ở bước 1)
@@ -35,7 +35,7 @@ Script [`scripts/build-dist.sh`](file:///mnt/d/DOC/VT/notebook-api/scripts/build
 ```
 
 **Quy trình script tự động xử lý:**
-1. Nhận diện `JAVA_HOME` hiện tại của terminal và chạy qua `apache-maven-3.9.11/bin/mvn`.
+1. Nhận diện `JAVA_HOME` hiện tại của terminal và chạy qua `backend/mvnw`.
 2. Tự động đồng bộ giao diện Web Frontend vào thư mục tài nguyên của backend (`backend/src/main/resources/static`).
 3. Thực thi `mvn clean package -DskipTests` để tạo runnable Fat JAR.
 4. Đóng gói đầy đủ vào thư mục `dist/` và tạo sẵn file nén `dist.tar.gz`.
@@ -46,15 +46,16 @@ Script [`scripts/build-dist.sh`](file:///mnt/d/DOC/VT/notebook-api/scripts/build
 
 Nếu bạn muốn tự gõ từng lệnh trong session terminal đó:
 
-### Bước 1: Build Spring Boot JAR bằng Maven nội bộ
+### Bước 1: Build Spring Boot JAR bằng Maven Wrapper
 ```bash
 cd backend
 
-# Gọi trực tiếp Maven nội bộ của dự án
-../apache-maven-3.9.11/bin/mvn clean package -DskipTests
+# Gọi Maven Wrapper của dự án
+./mvnw clean package -DskipTests
 
 cd ..
 ```
+
 
 ### Bước 2: Tạo cấu trúc thư mục `dist/`
 ```bash

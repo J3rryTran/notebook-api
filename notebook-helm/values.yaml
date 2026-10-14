@@ -29,13 +29,34 @@ kyuubi:
 
 auth:
   mode: oidc # oidc | no-oidc | ldap
-
-oidc:
-  issuer: https://10.29.19.56:32004/realms/lakehouse
-  clientId: kyuubi-notebook
-  redirectPath: /auth/callback
-  scopes: [openid, profile]
   usernameClaim: preferred_username
+  cacheTtl: 60s
+  sessionTtl: 8h
+  recheck: 10m
+  allowUnverified: false
+  oidc:
+    issuer: https://10.29.19.56:32004/realms/lakehouse
+    clientId: kyuubi-notebook
+    redirectPath: /auth/callback
+    scopes: [openid, profile]
+    serviceClientId: notebook-api
+  ldap:
+    url: ldaps://ldap.lakehouse.local:636
+    startTls: false
+    trustStore: ""
+    trustAll: false
+    baseDn: dc=lakehouse,dc=local
+    userDnPattern: ""
+    userSearchBase: ou=people
+    userSearchFilter: (uid={0})
+    usernameAttribute: uid
+    managerDn: ""
+    groupSearchBase: ou=groups
+    groupMemberAttribute: member
+    adminGroup: ""
+    connectTimeout: 5s
+    readTimeout: 10s
+
 
 mariadb:
   host: 10.29.19.52

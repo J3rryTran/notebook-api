@@ -31,3 +31,6 @@ dist.tar.gz
 # Crash logs
 hs_err_pid*
 replay_pid*
+
+# Bundled maven
+apache-maven-*/

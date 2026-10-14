@@ -3,10 +3,10 @@ set -e
 
 echo "[STARTUP] Khởi động Notebook All-In-One Application..."
 
-# Kiểm tra và đặt fallback token nội bộ nếu chưa có
+# Kiểm tra NOTEBOOK_INTERNAL_TOKEN bắt buộc
 if [ -z "${NOTEBOOK_INTERNAL_TOKEN}" ]; then
-  export NOTEBOOK_INTERNAL_TOKEN="internal-allinone-token-$(head /dev/urandom | tr -dc A-Za-z0-9 | head -c 32 ; echo '')"
-  echo "[STARTUP] NOTEBOOK_INTERNAL_TOKEN chưa được cung cấp, đã tự động sinh token nội bộ cho container."
+  echo "[ERROR] NOTEBOOK_INTERNAL_TOKEN là biến môi trường bắt buộc. Vui lòng cung cấp token nội bộ!" >&2
+  exit 1
 fi
 
 # 1. Khởi động nb-notebook-service (port 8084, actuator 8085)

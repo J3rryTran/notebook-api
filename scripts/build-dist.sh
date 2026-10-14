@@ -12,7 +12,7 @@ DIST_DIR="${ROOT_DIR}/dist"
 BACKEND_DIR="${ROOT_DIR}/backend"
 FRONTEND_DIR="${ROOT_DIR}/frontend"
 HELM_DIR="${ROOT_DIR}/notebook-helm"
-LOCAL_MAVEN="${ROOT_DIR}/apache-maven-3.9.11/bin/mvn"
+LOCAL_MAVEN="${BACKEND_DIR}/mvnw"
 
 GREEN='\033[0;32m'
 BLUE='\033[0;34m'
@@ -29,7 +29,8 @@ echo "          TỰ ĐỘNG ĐÓNG GÓI MICROSERVICES NOTEBOOK API VÀO dist/  
 echo "=============================================================================="
 
 # 1. Xác định Maven
-if [ -x "${LOCAL_MAVEN}" ]; then
+if [ -f "${LOCAL_MAVEN}" ]; then
+    chmod +x "${LOCAL_MAVEN}"
     MVN_CMD="${LOCAL_MAVEN}"
 elif command -v mvn >/dev/null 2>&1; then
     MVN_CMD="mvn"
@@ -43,6 +44,7 @@ log_success "Sử dụng Maven: ${MVN_CMD}"
 log_info "Biên dịch và đóng gói các module Spring Boot..."
 cd "${BACKEND_DIR}"
 "${MVN_CMD}" clean package -DskipTests
+
 
 # 3. Tạo thư mục dist/
 log_info "Xây dựng thư mục phân phối dist/..."
