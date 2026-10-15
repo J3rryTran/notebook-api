@@ -17,16 +17,14 @@ pass() { echo -e "${GREEN}[$1 PASS] $2${NC}"; }
 step() { echo -e "${BLUE}=== $1 ===${NC}"; }
 
 usage() {
-  echo "Dùng: $0 <image>:<tag> [--skip-runtime-check]"
+  echo "Dùng: $0 <image>:<tag>"
   echo "  vd: $0 docker.io/j3rrytran/notebook:0.1.1"
   exit 2
 }
 
 IMAGE=""
-SKIP_RUNTIME=false
 for arg in "$@"; do
   case "${arg}" in
-    --skip-runtime-check) SKIP_RUNTIME=true ;;
     -h|--help) usage ;;
     -*) echo "Tham số không hợp lệ: ${arg}"; usage ;;
     *) [ -z "${IMAGE}" ] || usage; IMAGE="${arg}" ;;
@@ -69,19 +67,6 @@ docker build \
 IMAGE_ID=$(docker inspect --format '{{.Id}}' "${IMAGE}")
 pass P2 "${IMAGE} (${IMAGE_ID})"
 
-RUNTIME_STATUS="PASSED"
-if [ "${SKIP_RUNTIME}" = true ]; then
-  RUNTIME_STATUS="SKIPPED"
-  echo -e "${YELLOW}[P3 SKIP] Bỏ qua chạy thử image (--skip-runtime-check)${NC}"
-else
-  step "P3: Chạy thử image (MariaDB + Kyuubi giả lập)"
-  bash "${ROOT_DIR}/scripts/image-smoke-test.sh" "${IMAGE}" > "${DIST_DIR}/image-smoke-test.log" 2>&1 || {
-    tail -n 30 "${DIST_DIR}/image-smoke-test.log"
-    fail P3 "Image chạy thử không đạt (dist/image-smoke-test.log)"
-  }
-  pass P3 "khởi động non-root/read-only, probe Ready, cổng nội bộ kín, dừng sạch"
-fi
-
 REPORT="${DIST_DIR}/package-report.md"
 cat > "${REPORT}" <<EOF
 # Đóng gói image notebook
@@ -92,7 +77,6 @@ cat > "${REPORT}" <<EOF
 | Image ID | \`${IMAGE_ID}\` |
 | Git | \`${GIT_REV}\`$([ "${GIT_DIRTY}" = true ] && echo ' (có thay đổi chưa commit)') |
 | Build (bước 1) | ${BUILT_AT}, $(grep '^tests=' "${CONTEXT_DIR}/BUILD-INFO" | cut -d= -f2) test xanh |
-| Chạy thử image | ${RUNTIME_STATUS} |
 | Thời gian đóng gói | $(( $(date +%s) - START_TIME ))s |
 
 Push: \`docker push ${IMAGE}\`

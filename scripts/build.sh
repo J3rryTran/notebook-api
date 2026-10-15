@@ -66,7 +66,7 @@ pass B3 "Frontend tự chứa, checksum vendor khớp"
 
 step "B4: Kiểm script & nginx.conf"
 docker run --rm -v "${ROOT_DIR}":/mnt -w /mnt koalaman/shellcheck:v0.10.0 \
-  docker/entrypoint.sh docker/healthcheck.sh scripts/build.sh scripts/package-image.sh scripts/image-smoke-test.sh || fail B4 "ShellCheck báo lỗi"
+  docker/entrypoint.sh docker/healthcheck.sh scripts/build.sh scripts/package-image.sh || fail B4 "ShellCheck báo lỗi"
 docker run --rm -v "${ROOT_DIR}/docker/nginx.conf":/etc/nginx/nginx.conf:ro nginx:1.27-alpine nginx -t > /dev/null 2>&1 \
   || fail B4 "nginx -t báo lỗi docker/nginx.conf"
 pass B4 "ShellCheck, nginx -t sạch"

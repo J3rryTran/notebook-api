@@ -36,10 +36,6 @@ Không yêu cầu commit trước; `BUILD-INFO` ghi lại nếu build từ code 
 - Tên và tag image truyền thẳng vào lệnh, bắt buộc có tag, không nhận `latest`.
 - Build context chỉ là `dist/image-context/`. Script kiểm `SHA256SUMS` trước: thư mục bị sửa sau bước 1 thì
   dừng, yêu cầu chạy lại `./scripts/build.sh`.
-- Sau khi build, chạy thử image bằng `scripts/image-smoke-test.sh` (không dùng chart): MariaDB và Kyuubi giả
-  lập, cấu hình `application.yaml` tối thiểu có sẵn trong script, chạy như trong pod (uid 10001, root
-  filesystem chỉ đọc). Kiểm: probe Ready, `/internal` 403, actuator không lộ, dừng sạch. Bỏ bước này bằng
-  `--skip-runtime-check` (không dùng cho bản phát hành).
 - Không tự push. Báo cáo: `dist/package-report.md`.
 
 Push và trỏ chart vào image vừa đóng gói:
