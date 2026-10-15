@@ -28,7 +28,7 @@ Nếu đang trong quá trình phát triển và working tree chưa commit:
 | Cổng | Tên | Chi tiết | Dừng khi |
 |---|---|---|---|
 | **P0** | Kiểm tra đầu vào Git | Đọc `appVersion` từ `notebook-helm/Chart.yaml`, xác thực trạng thái git clean / `--allow-dirty`. | Git dirty không cờ; version rỗng |
-| **P1** | Maven Build & Test | Chạy `mvn -B -ntp clean verify` qua Docker `maven:3.9.9-eclipse-temurin-17`, mount Docker socket cho MariaDB Testcontainers. | Bất kỳ unit/IT test nào thất bại (Tuyệt đối không `-DskipTests`) |
+| **P1** | Maven Build & Test | Chạy `mvn -B -ntp clean verify` qua Docker `maven:3.9.9-eclipse-temurin-17`, mount Docker socket cho MariaDB Testcontainers. Script tự dò phiên bản Docker API của máy (`docker version`) và truyền cho Testcontainers (`DOCKER_API_VERSION`, `-Dapi.version`), nên chạy được trên cả Docker cũ (20.10, API 1.41) lẫn mới (29+, yêu cầu API ≥ 1.40). | Bất kỳ unit/IT test nào thất bại (Tuyệt đối không `-DskipTests`) |
 | **P2** | Kiểm tra Spring Boot Fat JARs | Xác thực `nb-notebook-service` và `nb-execution-service` mỗi dịch vụ ra đúng 1 Fat JAR có `BOOT-INF/`. Ghi SHA-256 vào `dist/checksums.txt`. | JAR không hợp lệ hoặc thiếu |
 | **P3** | Kiểm tra Frontend Static | Đảm bảo `frontend/public/index.html` tự chứa hoàn toàn tài nguyên (không gọi CDN bên ngoài) và khớp mã băm SHA-256 trong `vendor/README.md`. | Phát hiện `http(s)://` trong `src`/`href`; sai SHA-256 |
 | **P4** | Kiểm tra Helm Chart | Chạy `scripts/helm-check.sh` qua Docker `alpine/helm:3.14.4`: `helm lint` + `template` 3 chế độ (`oidc`, `no-oidc`, `ldap`) + 13 kịch bản lỗi xác thực. | Lint lỗi hoặc sai kịch bản |
@@ -45,3 +45,13 @@ Nếu đang trong quá trình phát triển và working tree chưa commit:
 Sau khi hoàn tất, kết quả đóng gói và SHA-256 của các artifact được ghi đầy đủ tại:
 - `dist/build-report.md`: Báo cáo tổng thể quá trình build.
 - `dist/checksums.txt`: Bảng mã băm SHA-256 của các Fat JARs.
+
+
+### Chạy Maven bằng tay (không qua script)
+
+Test `*IT` cần Docker. Truyền phiên bản API của Docker daemon đang chạy, nếu không Testcontainers gửi API
+1.32 và Docker 29+ sẽ từ chối:
+
+```bash
+API=$(docker version --format '{{.Server.APIVersion}}'); docker run --rm -v "$PWD/backend":/src -v "$HOME/.m2":/root/.m2 -v /var/run/docker.sock:/var/run/docker.sock -e TESTCONTAINERS_HOST_OVERRIDE=host.docker.internal -e DOCKER_API_VERSION=$API --add-host=host.docker.internal:host-gateway -w /src maven:3.9.9-eclipse-temurin-17 mvn -B -ntp clean verify -Dapi.version=$API
+```

@@ -74,15 +74,26 @@ IMAGE_FULL="${IMAGE_REPO}:${TAG_VERSION}"
 echo -e "${GREEN}[P0 PASS] Version: ${VERSION}, Image Tag: ${IMAGE_FULL}, Git SHA: ${GIT_SHORT_REV}${NC}"
 
 echo -e "${BLUE}=== P1: Build & Verify backend trong Docker (Không skipTests) ===${NC}"
+# Test *IT dùng Testcontainers (docker-java). docker-java mặc định gửi Docker API 1.32: Docker Engine 29+
+# từ chối (yêu cầu >= 1.40), còn ghim cứng một bản mới (vd 1.44) thì Docker cũ (vd 20.10 = 1.41) từ chối.
+# Vì vậy dò đúng phiên bản API của Docker daemon đang chạy rồi truyền cho docker-java.
+DOCKER_API_VERSION="$(docker version --format '{{.Server.APIVersion}}' 2>/dev/null || true)"
+if [ -z "${DOCKER_API_VERSION}" ]; then
+  echo -e "${RED}[P1 FAIL] Không đọc được phiên bản API của Docker daemon (docker version). Docker có đang chạy?${NC}"
+  exit 1
+fi
+echo "Docker API version: ${DOCKER_API_VERSION}"
+
 docker run --rm \
   -v "${ROOT_DIR}/backend":/src \
   -v "${HOME}/.m2":/root/.m2 \
   -v /var/run/docker.sock:/var/run/docker.sock \
   -e TESTCONTAINERS_HOST_OVERRIDE=host.docker.internal \
+  -e DOCKER_API_VERSION="${DOCKER_API_VERSION}" \
   --add-host=host.docker.internal:host-gateway \
   -w /src \
   maven:3.9.9-eclipse-temurin-17 \
-  mvn -B -ntp clean verify > "${ROOT_DIR}/dist/mvn-verify.log" 2>&1 || {
+  mvn -B -ntp clean verify -Dapi.version="${DOCKER_API_VERSION}" > "${ROOT_DIR}/dist/mvn-verify.log" 2>&1 || {
     echo -e "${RED}[P1 FAIL] Maven build/verify thất bại! 20 dòng log cuối:${NC}"
     tail -n 20 "${ROOT_DIR}/dist/mvn-verify.log"
     exit 1
