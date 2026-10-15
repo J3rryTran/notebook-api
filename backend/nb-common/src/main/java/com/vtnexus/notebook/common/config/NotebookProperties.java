@@ -15,7 +15,6 @@ import java.util.List;
 @ConfigurationProperties(prefix = "notebook")
 public class NotebookProperties {
 
-    private String publicUrl = "";
     private List<String> admins = new ArrayList<>();
     private String internalToken = "";
     private String encryptionKey = "";
@@ -24,8 +23,6 @@ public class NotebookProperties {
     private MaxProperties max = new MaxProperties();
     private CellProperties cell = new CellProperties();
     private DocumentProperties document = new DocumentProperties();
-    // "import" là từ khóa Java nên field đặt tên khác; getImport()/setImport() bên dưới để Spring bind đúng
-    // khóa notebook.import.* (Lombok sinh getAnImport() thì Spring chỉ bind notebook.an-import.*).
     private ImportProperties anImport = new ImportProperties();
     private RevisionProperties revision = new RevisionProperties();
     private ResultsProperties results = new ResultsProperties();
@@ -54,20 +51,20 @@ public class NotebookProperties {
         @Getter
         @Setter
         public static class SourceProperties {
-            private int maxSize = 1048576; // 1Mi
+            private int maxSize = 1048576;
         }
     }
 
     @Getter
     @Setter
     public static class DocumentProperties {
-        private int maxSize = 16777216; // 16Mi
+        private int maxSize = 16777216;
     }
 
     @Getter
     @Setter
     public static class ImportProperties {
-        private int maxSize = 16777216; // 16Mi
+        private int maxSize = 16777216;
     }
 
     @Getter

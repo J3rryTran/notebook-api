@@ -64,7 +64,6 @@ public class KyuubiAuthProbe implements ApplicationRunner {
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
             int status = response.statusCode();
 
-            // Mode LDAP: nếu Kyuubi trả 401 kèm WWW-Authenticate: Bearer -> không tương thích!
             if ("ldap".equalsIgnoreCase(authProperties.getMode())) {
                 if (status == 401) {
                     String wwwAuth = response.headers().firstValue("WWW-Authenticate").orElse("");
@@ -74,7 +73,6 @@ public class KyuubiAuthProbe implements ApplicationRunner {
                 }
             }
 
-            // Nếu /ping với Basic ngẫu nhiên mà trả 200 (Kyuubi đang chạy chế độ NONE / unverified)
             if (status == 200) {
                 if (!authProperties.isAllowUnverified()) {
                     throw new IllegalStateException("Kyuubi accepts unauthenticated ping (NONE mode), but notebook.auth.allow-unverified is false. Aborting startup to prevent unverified access.");
@@ -82,7 +80,6 @@ public class KyuubiAuthProbe implements ApplicationRunner {
                     log.warn("WARNING: Kyuubi accepts unauthenticated requests (NONE mode). allow-unverified is true; running in unverified mode.");
                     authProperties.setVerifiedOverride(false);
 
-                    // WARN mỗi 5 phút
                     scheduler.scheduleAtFixedRate(() -> {
                         log.warn("WARNING: Kyuubi accepts unauthenticated requests (NONE mode). allow-unverified is true; running in unverified mode.");
                     }, 5, 5, TimeUnit.MINUTES);
@@ -92,7 +89,6 @@ public class KyuubiAuthProbe implements ApplicationRunner {
         } catch (IllegalStateException ex) {
             throw ex;
         } catch (Exception ex) {
-            // Kyuubi không trả lời hoặc lỗi kết nối -> WARN, không chặn khởi động
             log.warn("Kyuubi auth probe could not connect to Kyuubi at {}: {}. Continuing startup.", kyuubiRestUrl, ex.getMessage());
         }
     }

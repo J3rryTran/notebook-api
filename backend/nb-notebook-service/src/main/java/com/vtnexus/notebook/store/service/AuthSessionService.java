@@ -114,7 +114,6 @@ public class AuthSessionService {
         String username = colonIdx > 0 ? rawCred.substring(0, colonIdx) : session.getUsername();
         String password = colonIdx > 0 ? rawCred.substring(colonIdx + 1) : "";
 
-        // C17 (A8): now - last_recheck_at > recheck -> recheck với backend
         Duration timeSinceRecheck = Duration.between(session.getLastRecheckAt(), now);
         if (timeSinceRecheck.compareTo(authProperties.getRecheck()) > 0) {
             boolean recheckPassed = false;
@@ -161,7 +160,6 @@ public class AuthSessionService {
             }
 
             if (!backendUnavailable && !recheckPassed) {
-                // Xác thực thất bại -> Xóa phiên, trả null (401)
                 log.info("Session recheck failed for user {}, invalidating session", session.getUsername());
                 sessionRepository.delete(session);
                 return null;
@@ -174,7 +172,6 @@ public class AuthSessionService {
 
         String basicAuth = "Basic " + Base64.getEncoder().encodeToString(rawCred.getBytes(StandardCharsets.UTF_8));
 
-        // Cập nhật lastSeenAt và trượt hạn phiên tối đa 1 lần/phút
         if (Duration.between(session.getLastSeenAt(), now).toSeconds() > 60) {
             session.setLastSeenAt(now);
             session.setExpiresAt(now.plus(authProperties.getSessionTtl()));

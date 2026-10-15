@@ -19,12 +19,6 @@ import org.springframework.web.servlet.resource.NoResourceFoundException;
 import java.util.Collections;
 import java.util.UUID;
 
-/**
- * Ánh xạ lỗi của controller thành {@link ErrorEnvelope} cho cả hai service.
- * <p>
- * Lỗi đã biết ({@link NotebookApiException}) giữ mã và thông báo. Lỗi không lường trước chỉ trả thông báo cố
- * định kèm {@code requestId}; chi tiết exception chỉ ghi log phía server (C15).
- */
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 

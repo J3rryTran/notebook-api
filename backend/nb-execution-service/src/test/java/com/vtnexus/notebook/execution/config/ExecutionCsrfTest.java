@@ -21,9 +21,6 @@ import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-/**
- * B10: execution-service phải chặn CSRF ở mode dùng cookie phiên (no-oidc / ldap).
- */
 @SpringBootTest
 @AutoConfigureMockMvc
 @TestPropertySource(properties = {

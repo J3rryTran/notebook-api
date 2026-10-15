@@ -15,13 +15,6 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 
-/**
- * Đóng session Kyuubi rảnh quá {@code kyuubi.idle-session-timeout}.
- * <p>
- * Session proxied được đóng trên Kyuubi bằng token tài khoản dịch vụ. Session mở bằng credential của người
- * dùng thì notebook-api không còn credential hợp lệ để gọi Kyuubi (token đã hết hạn, mật khẩu không được giữ
- * ngoài phiên), nên chỉ đánh dấu CLOSED tại chỗ; phía Kyuubi tự thu hồi theo {@code kyuubi.session.idle.timeout}.
- */
 @Component
 public class IdleSessionReaper {
 

@@ -31,7 +31,6 @@ public class AuthPropertiesValidator implements EnvironmentPostProcessor, Ordere
             throw new IllegalStateException("notebook.auth.mode must be one of oidc, no-oidc, ldap");
         }
 
-        // 2. Encryption key cho no-oidc và ldap
         if (mode == AuthMode.NO_OIDC || mode == AuthMode.LDAP) {
             String encKey = env.getProperty("notebook.encryption-key");
             if (encKey == null || encKey.isBlank()) {
@@ -50,10 +49,15 @@ public class AuthPropertiesValidator implements EnvironmentPostProcessor, Ordere
             }
         }
 
-        // Profile kiểm tra qua acceptsProfiles
         boolean isDev = env.acceptsProfiles(Profiles.of("dev"));
 
-        // 3-7. Cấu hình mode LDAP
+        if (mode == AuthMode.OIDC) {
+            String redirectPath = env.getProperty("notebook.auth.oidc.redirect-path", "/auth/callback");
+            if (!isValidRedirectPath(redirectPath)) {
+                throw new IllegalStateException("notebook.auth.oidc.redirect-path must start with / and not be under /api/, /internal/ or /actuator/");
+            }
+        }
+
         if (mode == AuthMode.LDAP) {
             String url = env.getProperty("notebook.auth.ldap.url");
             if (url == null || url.isBlank()) {
@@ -96,7 +100,6 @@ public class AuthPropertiesValidator implements EnvironmentPostProcessor, Ordere
             }
         }
 
-        // 8. internalToken bắt buộc
         String internalToken = null;
         try {
             internalToken = env.getProperty("notebook.internalToken");
@@ -104,14 +107,12 @@ public class AuthPropertiesValidator implements EnvironmentPostProcessor, Ordere
                 internalToken = env.getProperty("notebook.internal-token");
             }
         } catch (IllegalArgumentException e) {
-            // Unresolved placeholder like ${NOTEBOOK_INTERNAL_TOKEN}
             throw new IllegalStateException("NOTEBOOK_INTERNAL_TOKEN is required", e);
         }
         if (internalToken == null || internalToken.isBlank()) {
             throw new IllegalStateException("NOTEBOOK_INTERNAL_TOKEN is required");
         }
 
-        // 9. Không được đặt kyuubi.engine.spark.output.mode
         String outputMode = env.getProperty("kyuubi.session-configs.kyuubi.engine.spark.output.mode");
         if (outputMode == null) {
             outputMode = env.getProperty("kyuubi.sessionConfigs.kyuubi.engine.spark.output.mode");
@@ -119,5 +120,12 @@ public class AuthPropertiesValidator implements EnvironmentPostProcessor, Ordere
         if (outputMode != null && !outputMode.isBlank()) {
             throw new IllegalStateException("output.mode must stay at Kyuubi default (Q7)");
         }
+    }
+
+    static boolean isValidRedirectPath(String path) {
+        if (path == null || !path.startsWith("/") || path.startsWith("//") || path.contains("://")) {
+            return false;
+        }
+        return !(path.startsWith("/api/") || path.startsWith("/internal/") || path.startsWith("/actuator/"));
     }
 }

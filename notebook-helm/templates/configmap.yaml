@@ -18,7 +18,6 @@ data:
       level:
         root: {{ .Values.logLevel }}
     notebook:
-      public-url: {{ .Values.publicUrl | quote }}
       admins: {{ toJson .Values.auth.admins }}
       auth:
         mode: {{ .Values.auth.mode }}
@@ -29,6 +28,7 @@ data:
         oidc:
           issuer: {{ .Values.auth.oidc.issuer | quote }}
           client-id: {{ .Values.auth.oidc.clientId | quote }}
+          redirect-path: {{ .Values.auth.oidc.redirectPath | default "/auth/callback" | quote }}
           scopes: {{ toJson .Values.auth.oidc.scopes }}
           {{- if .Values.auth.oidc.serviceAccount.enabled }}
           service-client-id: {{ .Values.auth.oidc.serviceAccount.clientId | quote }}
@@ -48,10 +48,13 @@ data:
           {{- if .Values.auth.ldap.userSearchFilter }}
           user-search-base: {{ .Values.auth.ldap.userSearchBase | quote }}
           user-search-filter: {{ .Values.auth.ldap.userSearchFilter | quote }}
+          {{- end }}
+          {{- if .Values.auth.ldap.managerDn }}
           manager-dn: {{ .Values.auth.ldap.managerDn | quote }}
           {{- end }}
           group-search-base: {{ .Values.auth.ldap.groupSearchBase | quote }}
           group-member-attribute: {{ .Values.auth.ldap.groupMemberAttribute | quote }}
+          group-object-class: {{ .Values.auth.ldap.groupObjectClass | default "*" | quote }}
           admin-group: {{ .Values.auth.ldap.adminGroup | quote }}
           connect-timeout: {{ .Values.auth.ldap.connectTimeout }}
           read-timeout: {{ .Values.auth.ldap.readTimeout }}

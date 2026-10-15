@@ -20,9 +20,7 @@ public class KyuubiProperties {
     private String restUrl = "http://localhost:10099";
     private Duration connectTimeout = Duration.ofSeconds(10);
     private Duration requestTimeout = Duration.ofSeconds(60);
-    /** Session rảnh quá thời gian này thì đóng (IdleSessionReaper). 0 = tắt. */
     private Duration idleSessionTimeout = Duration.ofMinutes(30);
-    /** Chu kỳ chạy IdleSessionReaper, mili giây (đọc qua placeholder {@code kyuubi.idle-reaper-interval}). */
     private long idleReaperInterval = 300000;
     private boolean pinToInstance = true;
     private List<String> allowedSessionConfigKeys = new ArrayList<>(List.of(

@@ -1,13 +1,7 @@
-{{/*
-Expand the name of the chart.
-*/}}
 {{- define "notebook.name" -}}
 {{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
-{{/*
-Create a default fully qualified app name.
-*/}}
 {{- define "notebook.fullname" -}}
 {{- if .Values.fullnameOverride }}
 {{- .Values.fullnameOverride | trunc 63 | trimSuffix "-" }}
@@ -21,16 +15,10 @@ Create a default fully qualified app name.
 {{- end }}
 {{- end }}
 
-{{/*
-Create chart name and version as used by the chart label.
-*/}}
 {{- define "notebook.chart" -}}
 {{- printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
-{{/*
-Common labels
-*/}}
 {{- define "notebook.labels" -}}
 helm.sh/chart: {{ include "notebook.chart" . }}
 {{ include "notebook.selectorLabels" . }}
@@ -40,17 +28,11 @@ app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- end }}
 
-{{/*
-Selector labels
-*/}}
 {{- define "notebook.selectorLabels" -}}
 app.kubernetes.io/name: {{ include "notebook.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 
-{{/*
-Convert size string (e.g. 1Mi, 16Mi, 1Gi, 500Ki or raw bytes) to integer bytes.
-*/}}
 {{- define "notebook.bytes" -}}
 {{- $v := toString . -}}
 {{- if hasSuffix "Gi" $v -}}
@@ -64,14 +46,7 @@ Convert size string (e.g. 1Mi, 16Mi, 1Gi, 500Ki or raw bytes) to integer bytes.
 {{- end -}}
 {{- end }}
 
-{{/*
-Validate values during rendering (21 rules from chart-design.md §5)
-*/}}
 {{- define "notebook.validate" -}}
-{{- if ne .Values.topology "allInOne" }}
-  {{- fail "topology=split is not implemented yet" }}
-{{- end }}
-
 {{- if and (ne .Values.auth.mode "oidc") (ne .Values.auth.mode "no-oidc") (ne .Values.auth.mode "ldap") }}
   {{- fail "auth.mode must be oidc, no-oidc or ldap" }}
 {{- end }}
@@ -88,8 +63,11 @@ Validate values during rendering (21 rules from chart-design.md §5)
   {{- fail "kyuubi.restUrl is required" }}
 {{- end }}
 
-{{- if not .Values.publicUrl }}
-  {{- fail "publicUrl is required" }}
+{{- if eq .Values.auth.mode "oidc" }}
+  {{- $rp := .Values.auth.oidc.redirectPath | default "/auth/callback" }}
+  {{- if or (not (hasPrefix "/" $rp)) (hasPrefix "//" $rp) (contains "://" $rp) (hasPrefix "/api/" $rp) (hasPrefix "/internal/" $rp) (hasPrefix "/actuator/" $rp) }}
+    {{- fail "auth.oidc.redirectPath must start with / and not be under /api/, /internal/ or /actuator/" }}
+  {{- end }}
 {{- end }}
 
 {{- if and (eq .Values.auth.mode "oidc") (not .Values.auth.oidc.issuer) }}
@@ -97,6 +75,12 @@ Validate values during rendering (21 rules from chart-design.md §5)
 {{- end }}
 
 {{- if eq .Values.auth.mode "ldap" }}
+  {{- if not .Values.auth.ldap }}
+    {{- fail "auth.ldap block is required for mode=ldap" }}
+  {{- end }}
+  {{- if not .Values.auth.ldap.trustStore }}
+    {{- fail "auth.ldap.trustStore is required for mode=ldap (enabled: false nếu không dùng)" }}
+  {{- end }}
   {{- if not .Values.auth.ldap.url }}
     {{- fail "auth.ldap.url is required for mode=ldap" }}
   {{- end }}
@@ -146,19 +130,6 @@ Validate values during rendering (21 rules from chart-design.md §5)
     {{- $np := int .Values.service.nodePort }}
     {{- if or (lt $np 30000) (gt $np 32767) }}
       {{- fail "service.nodePort must be in 30000-32767" }}
-    {{- end }}
-  {{- end }}
-{{- end }}
-
-{{- if and (hasPrefix "http://" .Values.publicUrl) .Values.ingress.tls }}
-  {{- fail "publicUrl must be https:// when ingress.tls is set" }}
-{{- end }}
-
-{{- if and (eq .Values.service.type "NodePort") (not .Values.ingress.enabled) }}
-  {{- if .Values.service.nodePort }}
-    {{- $expectedSuffix := printf ":%v" .Values.service.nodePort }}
-    {{- if not (hasSuffix $expectedSuffix .Values.publicUrl) }}
-      {{- fail (printf "publicUrl must use service.nodePort (%v) when exposing via NodePort" .Values.service.nodePort) }}
     {{- end }}
   {{- end }}
 {{- end }}

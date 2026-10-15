@@ -67,7 +67,6 @@ public class IpynbConversionService {
                         cellType = "CODE";
                     }
 
-                    // Source
                     String source = "";
                     JsonNode srcNode = cNode.get("source");
                     if (srcNode != null) {

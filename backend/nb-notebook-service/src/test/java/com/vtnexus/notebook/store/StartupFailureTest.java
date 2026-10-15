@@ -73,6 +73,5 @@ class StartupFailureTest {
         }).hasMessageContaining("notebook.auth.ldap.url is required");
     }
 
-    // Dummy empty configuration class
     static class TestApplication {}
 }

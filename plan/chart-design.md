@@ -1,5 +1,11 @@
 # Thiết kế lại chart `notebook-helm`
 
+> Cập nhật 2026-10-15: bỏ `publicUrl`. Redirect OIDC = `window.location.origin` (địa chỉ người dùng thực sự mở, qua NodePort/Ingress) + `auth.oidc.redirectPath` (mặc định `/auth/callback`, điền khớp Keycloak). Cờ `Secure` của cookie theo request thật (`X-Forwarded-Proto` / `request.isSecure()`). Các chỗ nhắc `publicUrl` bên dưới là lịch sử. Còn 19 ca lỗi trong `scripts/helm-check.sh`.
+
+> Cập nhật 2026-10-15: bỏ tham số `topology` (chỉ có all-in-one, không template nào dùng); mục `topology: split` bên dưới là lịch sử, không còn trong chart. Còn 20 ca lỗi trong `scripts/helm-check.sh`.
+
+> Cập nhật 2026-10-15: build tách 2 lệnh — `scripts/build.sh` (test + kiểm, gom `dist/image-context/` không mã nguồn) và `scripts/package-image.sh <image>:<tag>` (đóng gói + chạy thử). Bỏ `scripts/build-all-in-one.sh`, `.dockerignore`; tag không còn lấy từ `Chart.yaml`/git. Mục 10 bên dưới (P0–P9) là lịch sử; quy trình hiện hành ở `BUILD.md`.
+
 > Cập nhật 2026-10-15 (sau 0.2.1): bỏ thư mục `notebook-helm/ci/`; `values.yaml` chứa giá trị deploy thật (mode `oidc`, `replicaCount: 4`, PDB `minAvailable: 2`, `updateStrategy` 1/1, `mariadb.maxPoolSize: 5`); thêm `ha.*`, `updateStrategy`, `secretKeys.*`, `probes.*`, `terminationGracePeriodSeconds`, `preStopSleepSeconds`, `notebook.pageSize`, `ingress.annotations` (không còn viết cứng trong template); `scripts/helm-check.sh` và `contract-check.sh` kiểm trên `values.yaml` thật, mode khác thử bằng `--set`; 21 ca lỗi. Các chỗ nhắc `ci/` bên dưới là lịch sử.
 > Cập nhật 2026-10-15 (chart 0.2.1): bỏ `kyuubi.sessionOpenTimeout` (session mở `launch.async`, không có code dùng); thêm `kyuubi.idleReaperIntervalMs`; `username-attribute` luôn render ở mode `ldap`; thêm 2 điều kiện validate LDAP (tổng 18 ca lỗi trong `scripts/helm-check.sh`); NOTES ghi đúng tên user proxy `service-account-<clientId>`.
 

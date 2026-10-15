@@ -61,7 +61,6 @@ public class BearerDelegationAuthenticator {
             return cached.username;
         }
 
-        // 1. Phân tích JWT payload trước để lấy usernameClaim và exp
         String token = authHeader.substring(7).trim();
         String[] parts = token.split("\\.");
         if (parts.length < 2) {
@@ -93,7 +92,6 @@ public class BearerDelegationAuthenticator {
             throw new NotebookApiException("UNAUTHENTICATED", "Invalid bearer token", HttpStatus.UNAUTHORIZED);
         }
 
-        // 2. Gọi Kyuubi /api/v1/ping để xác thực token
         try {
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(kyuubiRestUrl + "/api/v1/ping"))
@@ -106,7 +104,6 @@ public class BearerDelegationAuthenticator {
             int status = response.statusCode();
 
             if (status == 200) {
-                // Xác thực thành công: Lưu cache với thời gian min(cacheTtl, exp - now)
                 Instant now = Instant.now();
                 Duration remainingExp = Duration.between(now, expInstant);
                 if (!remainingExp.isNegative() && !remainingExp.isZero()) {

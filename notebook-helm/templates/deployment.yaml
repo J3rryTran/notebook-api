@@ -94,7 +94,7 @@ spec:
                   name: {{ .Values.existingSecret }}
                   key: {{ .Values.secretKeys.oidcClientSecret }}
             {{- end }}
-            {{- if and (eq .Values.auth.mode "ldap") .Values.auth.ldap.userSearchFilter }}
+            {{- if and (eq .Values.auth.mode "ldap") .Values.auth.ldap.managerDn }}
             - name: NOTEBOOK_LDAP_MANAGER_PASSWORD
               valueFrom:
                 secretKeyRef:

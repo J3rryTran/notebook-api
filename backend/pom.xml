@@ -91,13 +91,11 @@
             </plugins>
         </pluginManagement>
         <plugins>
-            <!-- Chạy *IT (Testcontainers MariaDB) trong `mvn verify`; surefire chỉ chạy *Test -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-failsafe-plugin</artifactId>
                 <version>3.2.5</version>
                 <configuration>
-                    <!-- Dùng thư mục classes thay vì jar đã repackage của Spring Boot -->
                     <classesDirectory>${project.build.outputDirectory}</classesDirectory>
                 </configuration>
                 <executions>

@@ -54,7 +54,6 @@ public class LdapAuthenticator {
     private final AuthProperties authProperties;
     private final Environment environment;
 
-    // Singleton pooled LdapContextSource và LdapTemplate
     private volatile LdapContextSource sharedContextSource;
     private volatile LdapTemplate sharedLdapTemplate;
 
@@ -79,14 +78,12 @@ public class LdapAuthenticator {
         cs.setUrl(ldap.getUrl());
         cs.setBase(ldap.getBaseDn() != null ? ldap.getBaseDn() : "");
 
-        // 7. Timeout & Pool
         Map<String, Object> baseEnv = new HashMap<>();
         long connectTimeoutMs = parseTimeoutMs(ldap.getConnectTimeout(), 5000);
         long readTimeoutMs = parseTimeoutMs(ldap.getReadTimeout(), 10000);
         baseEnv.put("com.sun.jndi.ldap.connect.timeout", String.valueOf(connectTimeoutMs));
         baseEnv.put("com.sun.jndi.ldap.read.timeout", String.valueOf(readTimeoutMs));
 
-        // 6. TLS: một SSLSocketFactory dùng cho cả ldaps:// lẫn StartTLS (B9)
         boolean isDev = environment.acceptsProfiles(Profiles.of("dev"));
         SSLSocketFactory sslFactory = buildSslSocketFactory(ldap, isDev);
         boolean ldaps = ldap.getUrl().startsWith("ldaps://");
@@ -104,13 +101,11 @@ public class LdapAuthenticator {
 
         cs.setBaseEnvironmentProperties(baseEnv);
 
-        // Manager DN nếu có
         if (ldap.getManagerDn() != null && !ldap.getManagerDn().isBlank()) {
             cs.setUserDn(ldap.getManagerDn());
             cs.setPassword(ldap.getManagerPassword() != null ? ldap.getManagerPassword() : "");
         }
 
-        // JNDI connection pooling không dùng được với StartTLS (kết nối nâng cấp TLS không trả về pool an toàn)
         cs.setPooled(!ldap.isStartTls() || ldaps);
         cs.afterPropertiesSet();
 
@@ -145,7 +140,6 @@ public class LdapAuthenticator {
             sslContext.init(null, trustManagers, new SecureRandom());
             return sslContext.getSocketFactory();
         } catch (Exception ex) {
-            // Không lặng lẽ rơi về truststore mặc định: cấu hình TLS sai phải lộ ra ngay.
             throw new IllegalStateException("Cannot initialise LDAP TLS trust store: " + ex.getClass().getSimpleName(), ex);
         }
     }
@@ -173,10 +167,6 @@ public class LdapAuthenticator {
         }
     }
 
-    /**
-     * JNDI chỉ nhận socket factory dưới dạng tên class có {@code static getDefault()}; class này trả về
-     * factory đã dựng từ cấu hình truststore (dùng cho ldaps://).
-     */
     public static class ConfiguredSslSocketFactory extends SSLSocketFactory {
         static volatile SSLSocketFactory delegate = (SSLSocketFactory) SSLSocketFactory.getDefault();
 
@@ -198,7 +188,6 @@ public class LdapAuthenticator {
     }
 
     public LdapUser authenticate(String username, String password) {
-        // 1. Escape & Validate
         if (username == null || username.isBlank() || username.length() > 255) {
             throw new NotebookApiException("INVALID_CREDENTIALS", "Invalid credentials", HttpStatus.UNAUTHORIZED);
         }
@@ -208,7 +197,6 @@ public class LdapAuthenticator {
             }
         }
 
-        // 3. Mật khẩu rỗng -> 401 ngay lập tức
         if (password == null || password.isEmpty()) {
             throw new NotebookApiException("INVALID_CREDENTIALS", "Invalid credentials", HttpStatus.UNAUTHORIZED);
         }
@@ -225,17 +213,14 @@ public class LdapAuthenticator {
             String canonicalName;
 
             if (ldap.getUserDnPattern() != null && !ldap.getUserDnPattern().isBlank()) {
-                // Nhánh userDnPattern: escape username bằng LdapEncoder.nameEncode
                 String encodedUser = LdapEncoder.nameEncode(username);
                 targetUserDn = ldap.getUserDnPattern().replace("{0}", encodedUser);
                 if (ldap.getBaseDn() != null && !ldap.getBaseDn().isBlank() && !targetUserDn.endsWith(ldap.getBaseDn())) {
                     targetUserDn = targetUserDn + "," + ldap.getBaseDn();
                 }
 
-                // Bind với mật khẩu, đọc tên chuẩn bằng chính kết nối của người dùng (B3.4, B9)
                 canonicalName = bindAndReadCanonicalName(targetUserDn, password, ldap.getUsernameAttribute());
             } else {
-                // Nhánh userSearch: 2. Tìm DN thật qua ContextMapper và getNameInNamespace()
                 String searchFilter = ldap.getUserSearchFilter();
                 if (searchFilter == null || searchFilter.isBlank()) {
                     searchFilter = "(" + ldap.getUsernameAttribute() + "={0})";
@@ -243,7 +228,7 @@ public class LdapAuthenticator {
 
                 List<SearchResultEntry> results = sharedLdapTemplate.search(
                         LdapQueryBuilder.query()
-                                .base(ldap.getUserSearchBase() != null ? ldap.getUserSearchBase() : "")
+                                .base(relativeToBase(ldap.getUserSearchBase(), ldap.getBaseDn()))
                                 .filter(searchFilter, username),
                         (ContextMapper<SearchResultEntry>) ctx -> {
                             DirContextAdapter adapter = (DirContextAdapter) ctx;
@@ -261,11 +246,9 @@ public class LdapAuthenticator {
                 targetUserDn = entry.dn();
                 canonicalName = entry.canonicalUsername();
 
-                // Bind với mật khẩu qua cùng ContextSource (cùng TLS) với bước tìm kiếm
                 bindAndReadCanonicalName(targetUserDn, password, null);
             }
 
-            // 5. Kiểm tra adminGroup nếu có cấu hình
             boolean isAdmin = checkAdminGroup(canonicalName, targetUserDn, ldap);
 
             return new LdapUser(canonicalName, isAdmin);
@@ -289,12 +272,6 @@ public class LdapAuthenticator {
         }
     }
 
-    /**
-     * Bind bằng DN + mật khẩu người dùng qua {@code sharedContextSource} (cùng URL, TLS, timeout).
-     * {@code getContext(principal, credentials)} của Spring LDAP luôn tắt pooling nên mật khẩu không nằm lại
-     * trong pool. Khi {@code usernameAttribute} khác null: đọc thuộc tính đó từ entry của chính người dùng;
-     * entry không có thuộc tính → từ chối, không rơi về chuỗi người dùng gõ.
-     */
     private String bindAndReadCanonicalName(String userDn, String password, String usernameAttribute) throws Exception {
         DirContext ctx = sharedContextSource.getContext(userDn, password);
         try {
@@ -326,12 +303,15 @@ public class LdapAuthenticator {
 
         try {
             String memberAttr = ldap.getGroupMemberAttribute() != null ? ldap.getGroupMemberAttribute() : "member";
-            String searchBase = ldap.getGroupSearchBase() != null ? ldap.getGroupSearchBase() : "";
+            String searchBase = relativeToBase(ldap.getGroupSearchBase(), ldap.getBaseDn());
 
-            // Tham số là DN nếu attribute là member hoặc uniqueMember, là canonicalName nếu là memberUid (B3.5)
             String memberParam = ("memberUid".equalsIgnoreCase(memberAttr)) ? canonicalName : userDn;
 
-            String groupFilter = "(&(objectClass=*)(" + memberAttr + "={0}))";
+            String objectClass = ldap.getGroupObjectClass();
+            String classFilter = (objectClass == null || objectClass.isBlank() || "*".equals(objectClass.trim()))
+                    ? "(objectClass=*)"
+                    : "(objectClass=" + LdapEncoder.filterEncode(objectClass.trim()) + ")";
+            String groupFilter = "(&" + classFilter + "(" + memberAttr + "={0}))";
 
             List<String> userGroups = sharedLdapTemplate.search(
                     LdapQueryBuilder.query().base(searchBase).filter(groupFilter, memberParam),
@@ -349,6 +329,27 @@ public class LdapAuthenticator {
             log.warn("Failed to check LDAP admin group for user {}: {}", canonicalName, ex.getMessage());
         }
         return false;
+    }
+
+    static String relativeToBase(String dn, String baseDn) {
+        if (dn == null || dn.isBlank()) {
+            return "";
+        }
+        if (baseDn == null || baseDn.isBlank()) {
+            return dn.trim();
+        }
+        try {
+            LdapName name = new LdapName(dn.trim());
+            LdapName base = new LdapName(baseDn.trim());
+            if (name.equals(base)) {
+                return "";
+            }
+            if (name.startsWith(base)) {
+                return name.getSuffix(base.size()).toString();
+            }
+        } catch (Exception ignored) {
+        }
+        return dn.trim();
     }
 
     private record SearchResultEntry(String dn, String canonicalUsername) {}

@@ -57,21 +57,14 @@ public class AuthController {
         return environment.acceptsProfiles(org.springframework.core.env.Profiles.of("dev"));
     }
 
-    private boolean isSecureCookie() {
-        if (isDev()) {
-            return false;
-        }
-        String publicUrl = notebookProperties.getPublicUrl();
-        if (publicUrl != null && !publicUrl.isBlank()) {
-            return publicUrl.trim().toLowerCase().startsWith("https://");
-        }
-        return true;
+    private boolean isSecureCookie(HttpServletRequest request) {
+        return !isDev() && request.isSecure();
     }
 
-    private void addSessionCookie(HttpServletResponse response, String sessionId, Duration maxAge) {
+    private void addSessionCookie(HttpServletRequest request, HttpServletResponse response, String sessionId, Duration maxAge) {
         org.springframework.http.ResponseCookie cookie = org.springframework.http.ResponseCookie.from(SessionCookieFilter.COOKIE_NAME, sessionId)
                 .httpOnly(true)
-                .secure(isSecureCookie())
+                .secure(isSecureCookie(request))
                 .sameSite("Strict")
                 .path("/")
                 .maxAge(maxAge)
@@ -82,6 +75,7 @@ public class AuthController {
     @PostMapping("/login")
     public ResponseEntity<Map<String, Object>> login(
             @RequestBody Map<String, String> body,
+            HttpServletRequest httpRequest,
             HttpServletResponse response) {
 
         AuthMode mode = AuthMode.fromString(authProperties.getMode());
@@ -99,7 +93,6 @@ public class AuthController {
         boolean isAdmin = false;
 
         if (mode == AuthMode.NO_OIDC) {
-            // Xác thực với Kyuubi qua Basic header
             String raw = username + ":" + password;
             String basicHeader = "Basic " + Base64.getEncoder().encodeToString(raw.getBytes(StandardCharsets.UTF_8));
 
@@ -134,7 +127,7 @@ public class AuthController {
 
         NotebookAuthSession session = sessionService.createSession(authUser, password, mode.getValue(), isAdmin);
 
-        addSessionCookie(response, session.getId(), authProperties.getSessionTtl());
+        addSessionCookie(httpRequest, response, session.getId(), authProperties.getSessionTtl());
 
         return ResponseEntity.ok(Map.of("user", authUser));
     }
@@ -154,7 +147,7 @@ public class AuthController {
             for (Cookie c : cookies) {
                 if (SessionCookieFilter.COOKIE_NAME.equals(c.getName())) {
                     sessionService.deleteSession(c.getValue());
-                    addSessionCookie(response, "", Duration.ZERO);
+                    addSessionCookie(request, response, "", Duration.ZERO);
                     break;
                 }
             }

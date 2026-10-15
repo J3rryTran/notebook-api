@@ -19,12 +19,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-/**
- * KyuubiRestClient giao tiếp chuẩn với Kyuubi:
- * - Bỏ toàn bộ fallback giả (mock-session, mock-op, FINISHED/OK).
- * - S4: Gọi đúng host kyuubiInstance khi pinToInstance = true.
- * - Map lỗi rõ ràng: 503 KYUUBI_UNAVAILABLE, 401 KYUUBI_AUTH_FAILED, 409 RUNTIME_LOST.
- */
 @Component
 public class KyuubiRestClient {
 
@@ -65,7 +59,6 @@ public class KyuubiRestClient {
         return allowedSessionConfigKeys;
     }
 
-
     private String resolveAuth(String userAuthHeader) {
         if (userAuthHeader != null && !userAuthHeader.isBlank()) {
             return userAuthHeader;
@@ -84,10 +77,6 @@ public class KyuubiRestClient {
         return openSession(userAuthHeader, extraConfigs, null);
     }
 
-    /**
-     * @param proxyUser khi khác null: gửi {@code hive.server2.proxy.user}. Khóa này do hệ thống đặt (B4),
-     *                  không đi qua allowlist dành cho cấu hình người dùng, và ghi đè mọi giá trị người dùng gửi.
-     */
     public Map<String, String> openSession(String userAuthHeader, Map<String, String> extraConfigs, String proxyUser) {
         String auth = resolveAuth(userAuthHeader);
         HttpHeaders headers = new HttpHeaders();
@@ -106,7 +95,6 @@ public class KyuubiRestClient {
         if (proxyUser != null && !proxyUser.isBlank()) {
             configs.put(PROXY_USER_KEY, proxyUser);
         }
-
 
         Map<String, Object> body = Map.of("configs", configs);
 

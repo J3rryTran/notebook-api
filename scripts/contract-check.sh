@@ -1,8 +1,4 @@
 #!/usr/bin/env bash
-# ==============================================================================
-# scripts/contract-check.sh: Kiểm tra hợp đồng tĩnh & động (X1 - X5)
-# Tuân thủ đặc tả §5 trong plan/chart-image-contract.md
-# ==============================================================================
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -19,30 +15,34 @@ if [ "${1:-}" = "--static-only" ]; then
   RUN_DYNAMIC=false
 fi
 
-IMAGE_TAG="${IMAGE_TAG:-0.1.0}"
-IMAGE_NAME="${IMAGE_NAME:-j3rrytran/notebook:${IMAGE_TAG}}"
+IMAGE_NAME="${IMAGE_NAME:-}"
+if [ "${RUN_DYNAMIC}" = true ] && [ -z "${IMAGE_NAME}" ]; then
+  echo "IMAGE_NAME chưa đặt (vd IMAGE_NAME=docker.io/j3rrytran/notebook:0.1.1)" >&2
+  exit 2
+fi
 
 echo -e "${BLUE}=== [X1] Static Contract Check: Helm ConfigMap vs Code Properties ===${NC}"
 
-# 1. Trích xuất các key từ ConfigMap được render bởi Helm
 TMP_DIR=$(mktemp -d)
 trap 'rm -rf "${TMP_DIR}"' EXIT
 
-# Render từ values.yaml thật, cộng một lần render mode ldap (bằng --set) để có đủ khóa của mọi mode
-docker run --rm -v "${ROOT_DIR}/notebook-helm":/c alpine/helm:3.14.4 template t /c --set auth.oidc.serviceAccount.enabled=true > "${TMP_DIR}/oidc.yaml"
+docker run --rm -v "${ROOT_DIR}/notebook-helm":/c alpine/helm:3.14.4 template t /c --set auth.mode=oidc --set auth.oidc.serviceAccount.enabled=true > "${TMP_DIR}/oidc.yaml"
+LDAP_SETS=(--set auth.mode=ldap --set auth.ldap.url=ldaps://ldap.example.invalid:636 --set auth.ldap.startTls=false
+           --set auth.ldap.baseDn=dc=example --set auth.ldap.userSearchBase=ou=people
+           --set auth.ldap.userDnPattern= --set 'auth.ldap.userSearchFilter=(uid={0})' --set auth.ldap.usernameAttribute=uid
+           --set 'auth.ldap.managerDn=cn=svc\,dc=example\,dc=invalid' --set auth.ldap.groupSearchBase=ou=groups
+           --set auth.ldap.groupMemberAttribute=member --set auth.ldap.adminGroup=
+           --set auth.ldap.connectTimeout=5s --set auth.ldap.readTimeout=10s
+           --set auth.ldap.trustStore.enabled=false --set auth.ldap.trustStore.type=PKCS12)
 docker run --rm -v "${ROOT_DIR}/notebook-helm":/c alpine/helm:3.14.4 template t /c \
-  --set auth.mode=ldap --set auth.ldap.url=ldaps://ldap.example.invalid:636 \
-  --set 'auth.ldap.userSearchFilter=(uid={0})' --set 'auth.ldap.managerDn=cn=svc\,dc=example\,dc=invalid' \
-  --set auth.ldap.trustStore.enabled=true > "${TMP_DIR}/ldap.yaml"
+  "${LDAP_SETS[@]}" --set auth.ldap.trustStore.enabled=true > "${TMP_DIR}/ldap.yaml"
 
-# Danh sách khóa chính trong ConfigMap theo Contract 2
 EXPECTED_CONFIG_KEYS=(
   "spring.datasource.url"
   "spring.datasource.username"
   "spring.datasource.hikari.maximum-pool-size"
   "server.forward-headers-strategy"
   "logging.level.root"
-  "notebook.public-url"
   "notebook.admins"
   "notebook.auth.mode"
   "notebook.auth.allow-unverified"
@@ -50,6 +50,7 @@ EXPECTED_CONFIG_KEYS=(
   "notebook.auth.cache-ttl"
   "notebook.auth.oidc.issuer"
   "notebook.auth.oidc.client-id"
+  "notebook.auth.oidc.redirect-path"
   "notebook.auth.oidc.scopes"
   "notebook.auth.oidc.service-client-id"
   "notebook.auth.session-ttl"
@@ -60,6 +61,7 @@ EXPECTED_CONFIG_KEYS=(
   "notebook.auth.ldap.username-attribute"
   "notebook.auth.ldap.group-search-base"
   "notebook.auth.ldap.group-member-attribute"
+  "notebook.auth.ldap.group-object-class"
   "notebook.auth.ldap.admin-group"
   "notebook.auth.ldap.connect-timeout"
   "notebook.auth.ldap.read-timeout"
@@ -81,9 +83,6 @@ EXPECTED_CONFIG_KEYS=(
   "kyuubi.allowed-session-config-keys"
 )
 
-# Mỗi khóa phải (1) có mặt trong ConfigMap render của ít nhất một mode, và (2) với notebook.* / kyuubi.*:
-# có field tương ứng (camelCase của phần cuối) trong các lớp @ConfigurationProperties. Khóa spring.* /
-# server.* / logging.* thuộc Spring Boot nên chỉ kiểm (1).
 PROPS_SRC="${ROOT_DIR}/backend/nb-common/src/main/java/com/vtnexus/notebook/common"
 MISSING_KEYS=0
 for key in "${EXPECTED_CONFIG_KEYS[@]}"; do
@@ -117,7 +116,6 @@ fi
 
 echo -e "${BLUE}=== [X2 - X5] Dynamic Contract Verification ===${NC}"
 
-# Tạo network riêng cho kiểm thử
 TEST_NET="nb-contract-test-net-$$"
 docker network create "${TEST_NET}" > /dev/null
 
@@ -141,7 +139,6 @@ echo "2. Khởi tạo Mock WireMock (Kyuubi API)..."
 docker run -d --name "nb-mock-wiremock-$$" --network "${TEST_NET}" \
   wiremock/wiremock:3.9.1 > /dev/null
 
-# Chờ MariaDB và WireMock sẵn sàng
 echo "Chờ MariaDB và WireMock khởi động..."
 for i in $(seq 1 30); do
   if docker exec "nb-mock-mariadb-$$" mariadb-admin ping -h localhost -u root -prootpass --silent > /dev/null 2>&1; then
@@ -163,12 +160,10 @@ if [ "${WIREMOCK_READY}" != true ]; then
   exit 1
 fi
 
-# Cấu hình stub WireMock cho /api/v1/ping
 docker exec "nb-mock-wiremock-$$" curl -s -X POST http://localhost:8080/__admin/mappings \
   -H "Content-Type: application/json" \
   -d '{"request":{"method":"GET","url":"/api/v1/ping"},"response":{"status":200,"body":"PONG"}}' > /dev/null
 
-# application.yaml lấy từ ConfigMap mà CHART render (không viết tay), chỉ đổi địa chỉ sang container giả lập
 APP_CFG="${TMP_DIR}/application.yaml"
 docker run --rm -v "${ROOT_DIR}/notebook-helm":/c alpine/helm:3.14.4 template t /c \
   --set auth.mode=oidc \
@@ -177,7 +172,6 @@ docker run --rm -v "${ROOT_DIR}/notebook-helm":/c alpine/helm:3.14.4 template t 
   --set kyuubi.restUrl="http://nb-mock-wiremock-$$:8080" \
   --set auth.oidc.issuer="http://nb-mock-wiremock-$$:8080/realms/lakehouse" \
   --set auth.allowUnverified=true \
-  --set publicUrl="http://127.0.0.1:32380" \
   --show-only templates/configmap.yaml > "${TMP_DIR}/configmap.yaml"
 awk '/^  application.yaml: \|/{f=1; next} f && /^    /{sub(/^    /, ""); print; next} f && /^[[:space:]]*$/{print; next} f{f=0}' \
   "${TMP_DIR}/configmap.yaml" > "${APP_CFG}"
@@ -232,7 +226,6 @@ if [ "${READY}" = false ]; then
   exit 1
 fi
 
-# Kiểm tra GET /api/v1/auth/config trả đúng mode oidc
 AUTH_CONFIG=$(curl -s http://127.0.0.1:18080/api/v1/auth/config)
 if ! echo "${AUTH_CONFIG}" | grep -q '"mode":"oidc"'; then
   echo -e "${RED}[X2 FAIL] /api/v1/auth/config không trả mode=oidc: ${AUTH_CONFIG}${NC}"
@@ -241,14 +234,12 @@ fi
 echo -e "${GREEN}[X2 PASSED] Image chạy thành công với Chart configuration & probes.${NC}"
 
 echo "6. Kiểm tra cổng nội bộ không lộ (X3)..."
-# nginx chặn /internal/ -> 403
 INTERNAL_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:18080/internal/access/token || true)
 if [ "${INTERNAL_CODE}" != "403" ]; then
   echo -e "${RED}[X3 FAIL] /internal/access/token trả ${INTERNAL_CODE} (kỳ vọng 403)${NC}"
   exit 1
 fi
 
-# /actuator/health không lộ qua nginx -> 404
 ACTUATOR_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:18080/actuator/health || true)
 if [ "${ACTUATOR_CODE}" != "404" ]; then
   echo -e "${RED}[X3 FAIL] /actuator/health trả ${ACTUATOR_CODE} (kỳ vọng 404)${NC}"

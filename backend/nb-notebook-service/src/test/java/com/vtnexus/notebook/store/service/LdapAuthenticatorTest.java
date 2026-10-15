@@ -29,19 +29,16 @@ class LdapAuthenticatorTest {
 
         InMemoryListenerConfig listenerConfig = InMemoryListenerConfig.createLDAPConfig("default", 0);
         config.setListenerConfigs(listenerConfig);
-        config.setSchema(null); // allow flexible schema for in-memory test
+        config.setSchema(null);
 
         ldapServer = new InMemoryDirectoryServer(config);
         ldapServer.startListening();
         ldapPort = ldapServer.getListenPort();
 
-        // Populate entries:
-        // Base DN
         ldapServer.add("dn: dc=example,dc=com", "objectClass: top", "objectClass: domain", "dc: example");
         ldapServer.add("dn: ou=people,dc=example,dc=com", "objectClass: top", "objectClass: organizationalUnit", "ou: people");
         ldapServer.add("dn: ou=groups,dc=example,dc=com", "objectClass: top", "objectClass: organizationalUnit", "ou: groups");
 
-        // Alice (admin)
         ldapServer.add(
                 "dn: uid=alice,ou=people,dc=example,dc=com",
                 "objectClass: top",
@@ -53,7 +50,6 @@ class LdapAuthenticatorTest {
                 "userPassword: password123"
         );
 
-        // Bob (regular user)
         ldapServer.add(
                 "dn: uid=bob,ou=people,dc=example,dc=com",
                 "objectClass: top",
@@ -65,7 +61,6 @@ class LdapAuthenticatorTest {
                 "userPassword: bobpassword"
         );
 
-        // Group notebook-admins containing alice
         ldapServer.add(
                 "dn: cn=notebook-admins,ou=groups,dc=example,dc=com",
                 "objectClass: top",
@@ -102,12 +97,10 @@ class LdapAuthenticatorTest {
     void testUserSearchAliceAdminAndBobNotAdmin() {
         LdapAuthenticator authenticator = new LdapAuthenticator(authProperties, environment);
 
-        // ALICE viết hoa -> trả về canonical 'alice' và admin=true
         LdapAuthenticator.LdapUser alice = authenticator.authenticate("ALICE", "password123");
         assertThat(alice.canonicalUsername()).isEqualTo("alice");
         assertThat(alice.isAdmin()).isTrue();
 
-        // bob -> admin=false
         LdapAuthenticator.LdapUser bob = authenticator.authenticate("bob", "bobpassword");
         assertThat(bob.canonicalUsername()).isEqualTo("bob");
         assertThat(bob.isAdmin()).isFalse();
@@ -125,6 +118,37 @@ class LdapAuthenticatorTest {
         LdapAuthenticator.LdapUser bob = authenticator.authenticate("bob", "bobpassword");
         assertThat(bob.canonicalUsername()).isEqualTo("bob");
         assertThat(bob.isAdmin()).isFalse();
+    }
+
+    @Test
+    void testFreeIpaStyleAbsoluteDnPatternAndGroupObjectClass() {
+        AuthProperties.LdapProperties ldap = authProperties.getLdap();
+        ldap.setUserSearchFilter("");
+        ldap.setUserDnPattern("uid={0},ou=people,dc=example,dc=com");
+        ldap.setGroupSearchBase("ou=groups,dc=example,dc=com");
+        ldap.setGroupObjectClass("groupOfNames");
+        LdapAuthenticator authenticator = new LdapAuthenticator(authProperties, environment);
+
+        LdapAuthenticator.LdapUser alice = authenticator.authenticate("alice", "password123");
+        assertThat(alice.canonicalUsername()).isEqualTo("alice");
+        assertThat(alice.isAdmin()).isTrue();
+        assertThat(authenticator.authenticate("bob", "bobpassword").isAdmin()).isFalse();
+    }
+
+    @Test
+    void testGroupObjectClassMismatchIsNotAdmin() {
+        authProperties.getLdap().setGroupObjectClass("posixGroup");
+        LdapAuthenticator authenticator = new LdapAuthenticator(authProperties, environment);
+
+        assertThat(authenticator.authenticate("alice", "password123").isAdmin()).isFalse();
+    }
+
+    @Test
+    void testRelativeToBase() {
+        assertThat(LdapAuthenticator.relativeToBase("cn=groups,cn=accounts,dc=lab,dc=com", "cn=accounts,dc=lab,dc=com")).isEqualTo("cn=groups");
+        assertThat(LdapAuthenticator.relativeToBase("cn=groups", "cn=accounts,dc=lab,dc=com")).isEqualTo("cn=groups");
+        assertThat(LdapAuthenticator.relativeToBase("cn=accounts,dc=lab,dc=com", "cn=accounts,dc=lab,dc=com")).isEmpty();
+        assertThat(LdapAuthenticator.relativeToBase("", "dc=lab,dc=com")).isEmpty();
     }
 
     @Test
@@ -149,12 +173,10 @@ class LdapAuthenticatorTest {
     void testLdapInjectionAttemptsReturn401() {
         LdapAuthenticator authenticator = new LdapAuthenticator(authProperties, environment);
 
-        // Injection username: *)(uid=*
         assertThatThrownBy(() -> authenticator.authenticate("*)(uid=*", "password"))
                 .isInstanceOf(NotebookApiException.class)
                 .hasMessageContaining("Invalid credentials");
 
-        // Malformed username: alice,ou=x
         assertThatThrownBy(() -> authenticator.authenticate("alice,ou=x", "password"))
                 .isInstanceOf(NotebookApiException.class)
                 .hasMessageContaining("Invalid credentials");
@@ -164,7 +186,6 @@ class LdapAuthenticatorTest {
     void testServerDownReturns503() {
         LdapAuthenticator authenticator = new LdapAuthenticator(authProperties, environment);
 
-        // Tắt server
         ldapServer.shutDown(true);
 
         assertThatThrownBy(() -> authenticator.authenticate("alice", "password123"))

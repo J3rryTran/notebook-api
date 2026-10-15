@@ -15,12 +15,6 @@ import java.security.MessageDigest;
 import java.util.Map;
 import java.util.Set;
 
-/**
- * Filter bảo vệ tất cả endpoint /internal/** bằng X-Internal-Token header.
- * So sánh token bằng MessageDigest.isEqual để chống timing attacks (C18).
- * Kiểm tra tiền tố /internal/ chính xác (tránh bypass với /internalx).
- * Ngoài so token: từ chối nếu request.getRemoteAddr() không phải loopback (J5/K5).
- */
 public class InternalTokenFilter extends OncePerRequestFilter {
 
     private static final Set<String> LOOPBACK_ADDRESSES = Set.of(
@@ -40,7 +34,6 @@ public class InternalTokenFilter extends OncePerRequestFilter {
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
         String uri = request.getRequestURI();
-        // Chỉ filter các request có path là /internal hoặc bắt đầu bằng /internal/
         return !(uri.equals("/internal") || uri.startsWith("/internal/"));
     }
 

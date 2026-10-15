@@ -1,44 +1,25 @@
-# Đóng gói và Phân phối Docker Image
+# Docker image
 
-Tài liệu hướng dẫn quy trình đóng gói All-In-One Docker Image cho ứng dụng Lakehouse Notebook API (Contract 2).
+Một image all-in-one (contract 2), deploy bằng chart `notebook-helm`. Cách build: xem [BUILD.md](BUILD.md)
+(`./scripts/build.sh` rồi `./scripts/package-image.sh <image>:<tag>`).
 
----
+## Nội dung image
 
-## 1. Cơ chế đóng gói All-In-One (Contract 2)
+| Thành phần | Nguồn trong build context (`dist/image-context/`) | Trong image |
+|---|---|---|
+| notebook-service | `app/nb-notebook-service.jar` | `/app/nb-notebook-service.jar` (127.0.0.1:8084, actuator :8085) |
+| execution-service | `app/nb-execution-service.jar` | `/app/nb-execution-service.jar` (127.0.0.1:8082, actuator :8083) |
+| Web UI | `web/` | `/usr/share/nginx/html/` |
+| nginx | `conf/nginx.conf` | `/etc/nginx/nginx.conf`, cổng **8080** (duy nhất mở ra ngoài) |
+| Khởi động / probe | `bin/entrypoint.sh`, `bin/healthcheck.sh` | `/app/` |
 
-Hệ thống được đóng gói trong một Docker image duy nhất (`Dockerfile`):
-- **Base image**: `debian:12-slim`.
-- **Java Runtime**: JDK 17 lấy từ `trungtmba11093/java_env:java17-v0`.
-- **Nginx**: Phục vụ giao diện tĩnh (`/usr/share/nginx/html`), reverse proxy API tới 2 Spring Boot services và chặn các truy cập tới `/internal/**` từ bên ngoài.
-- **Bảo mật**:
-  - Image chạy dưới user không có đặc quyền `notebook` (UID 10001, GID 10001).
-  - Khả năng chạy với file system chỉ đọc (`readOnlyRootFilesystem: true`) kết hợp tmpfs tại `/tmp`.
-  - Token nội bộ `NOTEBOOK_INTERNAL_TOKEN` tự sinh ngẫu nhiên từ `/dev/urandom` lúc khởi động (không ghi log) và các endpoint `/internal/**` chỉ tiếp nhận yêu cầu từ loopback (`127.0.0.1`, `::1`).
+- Base `debian:12-slim`, JDK 17 lấy từ `trungtmba11093/java_env:java17-v0`.
+- Chạy user `notebook` (uid/gid 10001), chạy được với root filesystem chỉ đọc, chỉ ghi `/tmp`.
+- Token nội bộ giữa hai service tự sinh từ `/dev/urandom` mỗi lần khởi động (không ghi log); `/internal/**`
+  chỉ nhận từ loopback và bị nginx chặn từ ngoài.
+- Image **không chứa mã nguồn**: build context chỉ gồm các file trên.
 
----
+Label: `notebook.contract=2`, `org.opencontainers.image.version` (= tag), `org.opencontainers.image.revision`
+(git sha lúc build).
 
-## 2. Quy trình đóng gói tự động
-
-Khuyến nghị sử dụng script đóng gói tích hợp sẵn cổng chặn chất lượng P0 - P9:
-
-```bash
-# Đóng gói với kiểm tra đầy đủ P0 - P9
-./scripts/build-all-in-one.sh
-
-# Hoặc nếu working tree đang có thay đổi chưa commit:
-./scripts/build-all-in-one.sh --allow-dirty
-```
-
-Sau khi script hoàn thành và vượt qua toàn bộ các cổng chặn P0 - P8, image sẽ được tạo với tag tương ứng (ví dụ: `docker.io/j3rrytran/notebook:0.1.0`).
-
----
-
-## 3. Đẩy Image lên Docker Registry
-
-Để đẩy image đã build lên Docker Hub:
-
-```bash
-docker push docker.io/j3rrytran/notebook:0.1.0
-```
-
-Sau đó sử dụng Helm Chart tại [notebook-helm](notebook-helm) để triển khai lên Kubernetes cluster.
+Không build trực tiếp `docker build .` từ gốc repo: `Dockerfile` đọc layout của `dist/image-context/`.

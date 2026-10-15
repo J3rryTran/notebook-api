@@ -12,10 +12,6 @@ import org.springframework.web.bind.annotation.*;
 import java.util.HashMap;
 import java.util.Map;
 
-/**
- * Endpoints nội bộ chỉ phục vụ giao tiếp giữa các microservices (execution-service).
- * Chỉ chấp nhận header X-Internal-Token khớp secret cấu hình chung.
- */
 @RestController
 @RequestMapping("/internal")
 public class InternalAccessController {

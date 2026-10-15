@@ -51,7 +51,6 @@ public class NotebookService {
         return notebookRepository;
     }
 
-
     public String checkAccess(Notebook notebook, String user, String requiredRole) {
         if (notebook.getOwner().equals(user)) {
             return "OWNER";
@@ -193,7 +192,6 @@ public class NotebookService {
         if (name != null && !name.isBlank()) notebook.setName(name.trim());
         if (description != null) notebook.setDescription(description);
 
-        // C23: Cập nhật metadata trong documentJson. Lỗi parse/serialize -> 400 INVALID_DOCUMENT, không tăng revision, không lưu
         NotebookDocument doc;
         try {
             doc = parseDocument(notebook.getDocumentJson());
@@ -227,7 +225,6 @@ public class NotebookService {
         }
 
         if (purge) {
-            // C21 Purge: xóa thật trong một transaction: logs -> cell-runs -> runs -> kyuubi-sessions -> revisions -> permissions -> notebook
             entityManager.createNativeQuery(
                     "DELETE l FROM notebook_execution_logs l " +
                     "JOIN notebook_cell_runs cr ON l.cell_run_id = cr.id " +
@@ -268,7 +265,6 @@ public class NotebookService {
                     .setParameter("nbId", notebookId)
                     .executeUpdate();
         } else {
-            // Xóa mềm: đánh dấu deleted_at và thu hồi permissions chia sẻ để biến mất khỏi danh sách người khác
             notebook.setDeletedAt(Instant.now());
             notebookRepository.save(notebook);
             permissionRepository.deleteByNotebookId(notebookId);
@@ -297,7 +293,6 @@ public class NotebookService {
                     .build();
             revisionRepository.save(revision);
 
-            // C24: Đếm và xóa CHỈ revision_type='AUTO', giữ MANUAL/IMPORT
             long autoCount = revisionRepository.countAutoRevisions(notebookId);
             if (autoCount > maxRevisions) {
                 int toDelete = (int) (autoCount - maxRevisions);
@@ -314,7 +309,6 @@ public class NotebookService {
             throw new NotebookApiException("INTERNAL_ERROR", "Failed to create notebook revision snapshot", HttpStatus.INTERNAL_SERVER_ERROR);
         }
     }
-
 
     public List<NotebookPermission> getPermissions(String notebookId, String user) {
         Notebook notebook = getNotebook(notebookId, user);

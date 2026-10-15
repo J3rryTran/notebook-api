@@ -44,7 +44,6 @@ logging:
           time_zone: UTC
 
 notebook:
-  public-url: ""
   internal-token: ${NOTEBOOK_INTERNAL_TOKEN}
   encryption-key: ${NOTEBOOK_AUTH_ENCRYPTION_KEY:}
   admins: []

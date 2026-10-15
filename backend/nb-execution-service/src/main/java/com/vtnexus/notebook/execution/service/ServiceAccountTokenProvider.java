@@ -70,7 +70,6 @@ public class ServiceAccountTokenProvider {
 
             String accessToken = respBody.get("access_token").asText();
             int expiresIn = respBody.has("expires_in") ? respBody.get("expires_in").asInt(300) : 300;
-            // Cache token tới exp - 30s
             this.cachedToken = accessToken;
             this.tokenExpiry = now.plusSeconds(Math.max(10, expiresIn - 30));
 

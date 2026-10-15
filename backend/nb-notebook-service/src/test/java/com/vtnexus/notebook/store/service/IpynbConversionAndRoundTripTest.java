@@ -31,7 +31,6 @@ class IpynbConversionAndRoundTripTest {
 
     @Test
     void testRoundTripSqlLabJsonV1PreservesExtraFields() throws Exception {
-        // Mẫu thật từ self_service.notebooks
         String rawJson = "{\"schemaVersion\":1,\"defaultLanguage\":\"SQL\",\"metadata\":{\"customMeta\":\"val123\"},\"parameters\":[{\"key\":\"p1\"}]," +
                 "\"cells\":[{\"id\":\"cell-315387a0\",\"type\":\"CODE\",\"language\":\"SQL\",\"source\":\"SELECT 1\"," +
                 "\"metadata\":{\"kyuubiCellId\":\"b523460e-xyz\",\"customCellMeta\":\"cellVal\"}}]}";
@@ -49,10 +48,8 @@ class IpynbConversionAndRoundTripTest {
         assertThat(cell.getMetadata()).containsEntry("kyuubiCellId", "b523460e-xyz");
         assertThat(cell.getMetadata()).containsEntry("customCellMeta", "cellVal");
 
-        // Sửa 1 cell
         cell.setSource("SELECT 2");
 
-        // Serialize lại
         String updatedJson = objectMapper.writeValueAsString(doc);
         NotebookDocument updatedDoc = objectMapper.readValue(updatedJson, NotebookDocument.class);
 
@@ -105,13 +102,11 @@ class IpynbConversionAndRoundTripTest {
         when(notebookService.getNotebook("nb-test-1", "testuser")).thenReturn(notebook);
         when(notebookService.parseDocument(docJson)).thenReturn(doc);
 
-        // Export ra ipynb
         String ipynbJson = conversionService.exportNotebook("nb-test-1", false, "testuser");
         assertThat(ipynbJson).contains("\"nbformat\" : 4");
         assertThat(ipynbJson).contains("SELECT 100;");
         assertThat(ipynbJson).contains("# Title markdown");
 
-        // Import ngược lại từ ipynb
         com.vtnexus.notebook.store.repository.NotebookRepository repoMock = Mockito.mock(com.vtnexus.notebook.store.repository.NotebookRepository.class);
         when(notebookService.getNotebookRepository()).thenReturn(repoMock);
         when(repoMock.save(any(Notebook.class))).thenAnswer(inv -> inv.getArgument(0));

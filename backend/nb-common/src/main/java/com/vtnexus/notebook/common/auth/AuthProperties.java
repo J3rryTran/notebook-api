@@ -15,7 +15,7 @@ import java.util.List;
 @ConfigurationProperties(prefix = "notebook.auth")
 public class AuthProperties {
 
-    private String mode; // oidc | no-oidc | ldap
+    private String mode;
     private String usernameClaim = "preferred_username";
     private Duration cacheTtl = Duration.ofSeconds(60);
     private Duration sessionTtl = Duration.ofHours(8);
@@ -39,6 +39,7 @@ public class AuthProperties {
         private String issuer = "";
         private String clientId = "kyuubi-notebook";
         private List<String> scopes = new ArrayList<>(List.of("openid", "profile"));
+        private String redirectPath = "/auth/callback";
         private String serviceClientId = "notebook-api";
         private String serviceClientSecret = "";
     }
@@ -61,6 +62,7 @@ public class AuthProperties {
         private String managerPassword = "";
         private String groupSearchBase = "ou=groups";
         private String groupMemberAttribute = "member";
+        private String groupObjectClass = "*";
         private String adminGroup = "";
         private Duration connectTimeout = Duration.ofSeconds(5);
         private Duration readTimeout = Duration.ofSeconds(10);

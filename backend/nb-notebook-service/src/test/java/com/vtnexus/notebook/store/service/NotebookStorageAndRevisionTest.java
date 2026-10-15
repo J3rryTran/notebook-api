@@ -70,10 +70,9 @@ class NotebookStorageAndRevisionTest {
 
     @Test
     void testDocumentSizeExceeds16MBThrows413() {
-        // Document lớn hơn 16MB
         StringBuilder hugeText = new StringBuilder();
         for (int i = 0; i < 17 * 1024; i++) {
-            hugeText.append("0123456789abcdef".repeat(64)); // 1KB per line
+            hugeText.append("0123456789abcdef".repeat(64));
         }
         NotebookDocument doc = NotebookDocument.builder()
                 .schemaVersion(1)
@@ -84,7 +83,6 @@ class NotebookStorageAndRevisionTest {
         assertThatThrownBy(() -> {
             String json = objectMapper.writeValueAsString(doc);
             notebookService.parseDocument(json);
-            // test createNotebook with large cell source
             notebookService.createNotebook("test", null, null, null, null,
                     List.of(java.util.Map.of("source", hugeText.toString())), "owner");
         }).isInstanceOf(NotebookApiException.class)
@@ -153,7 +151,6 @@ class NotebookStorageAndRevisionTest {
 
         notebookService.deleteNotebook("nb-1", 1L, "owner1", true);
 
-        // 7 queries: logs, cell_runs, runs, kyuubi_sessions, revisions, permissions, notebooks
         verify(entityManager, times(7)).createNativeQuery(anyString());
         verify(notebookRepository, never()).save(notebook);
     }
@@ -169,7 +166,6 @@ class NotebookStorageAndRevisionTest {
                 .build();
         when(notebookRepository.findById("nb-1")).thenReturn(Optional.of(notebook));
 
-        // Giả sử có 105 AUTO revision (> 100)
         when(revisionRepository.countAutoRevisions("nb-1")).thenReturn(105L);
 
         List<NotebookRevision> autoToPrune = new ArrayList<>();
@@ -181,7 +177,6 @@ class NotebookStorageAndRevisionTest {
 
         notebookService.snapshotRevision("nb-1", "Auto checkpoint", "owner1", "AUTO");
 
-        // Đảm bảo 5 bản ghi AUTO cũ nhất bị xóa
         verify(revisionRepository, times(5)).delete(any(NotebookRevision.class));
     }
 }

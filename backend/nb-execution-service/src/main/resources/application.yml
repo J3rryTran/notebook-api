@@ -41,7 +41,6 @@ logging:
           time_zone: UTC
 
 notebook:
-  public-url: ""
   internal-token: ${NOTEBOOK_INTERNAL_TOKEN}
   notebook-service-url: "http://127.0.0.1:8084"
   auth:

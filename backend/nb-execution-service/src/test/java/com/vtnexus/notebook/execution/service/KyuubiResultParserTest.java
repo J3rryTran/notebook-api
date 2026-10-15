@@ -36,12 +36,10 @@ class KyuubiResultParserTest {
 
     @Test
     void testParseRowsWithNullAndEmpty() throws Exception {
-        // Case null value, rowCount 0
         String emptyRowset = "{\"rows\": [], \"rowCount\": 0}";
         List<List<JsonNode>> emptyRows = parser.rows(mapper.readTree(emptyRowset));
         assertThat(emptyRows).isEmpty();
 
-        // Case real rowset with values and null
         String rowsetJson = """
                 {
                   "rows": [

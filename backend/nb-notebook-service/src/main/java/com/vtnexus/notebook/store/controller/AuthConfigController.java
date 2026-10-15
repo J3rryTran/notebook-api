@@ -32,14 +32,12 @@ public class AuthConfigController {
             resp.put("issuer", authProperties.getOidc().getIssuer());
             resp.put("clientId", authProperties.getOidc().getClientId());
             resp.put("scopes", authProperties.getOidc().getScopes());
-            String publicUrl = notebookProperties.getPublicUrl() != null ? notebookProperties.getPublicUrl().replaceAll("/+$", "") : "";
-            resp.put("redirectUri", publicUrl.isEmpty() ? "/auth/callback" : publicUrl + "/auth/callback");
+            resp.put("redirectPath", authProperties.getOidc().getRedirectPath());
         } else if ("no-oidc".equalsIgnoreCase(mode)) {
             resp.put("verified", authProperties.isEffectiveVerified());
         } else if ("ldap".equalsIgnoreCase(mode)) {
             resp.put("verified", true);
         }
-
 
         return ResponseEntity.ok(resp);
     }

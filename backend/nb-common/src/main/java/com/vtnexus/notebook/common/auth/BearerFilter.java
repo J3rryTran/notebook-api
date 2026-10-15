@@ -27,7 +27,6 @@ public class BearerFilter extends OncePerRequestFilter {
     private final BearerDelegationAuthenticator authenticator;
     private final ObjectMapper objectMapper;
 
-
     public BearerFilter(BearerDelegationAuthenticator authenticator, ObjectMapper objectMapper) {
         this.authenticator = authenticator;
         this.objectMapper = objectMapper;
@@ -39,7 +38,6 @@ public class BearerFilter extends OncePerRequestFilter {
 
         String path = request.getRequestURI();
 
-        // Whitelist các endpoint public hoặc internal (được bảo vệ riêng bằng X-Internal-Token)
         if (isPublicOrInternal(path)) {
             filterChain.doFilter(request, response);
             return;
@@ -47,7 +45,6 @@ public class BearerFilter extends OncePerRequestFilter {
 
         String authHeader = request.getHeader(HttpHeaders.AUTHORIZATION);
 
-        // Chế độ OIDC: bắt buộc phải có Authorization: Bearer <token>
         if (authHeader == null || authHeader.isBlank()) {
             writeError(response, HttpStatus.UNAUTHORIZED, "UNAUTHENTICATED", "Authorization header is required");
             return;
@@ -58,7 +55,6 @@ public class BearerFilter extends OncePerRequestFilter {
             return;
         }
 
-        // Chỉ bước xác thực nằm trong try/catch: lỗi của controller phía sau không được đổi thành lỗi xác thực.
         String username;
         try {
             username = authenticator.authenticate(authHeader);

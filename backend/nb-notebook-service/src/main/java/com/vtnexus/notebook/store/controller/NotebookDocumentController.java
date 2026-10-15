@@ -45,7 +45,6 @@ public class NotebookDocumentController {
         return ResponseEntity.ok(nb);
     }
 
-    // D-2: Bỏ tham số owner
     @GetMapping("/notebooks")
     public ResponseEntity<Map<String, Object>> listNotebooks(
             @RequestParam(value = "folderId", required = false) String folderId,
@@ -103,7 +102,6 @@ public class NotebookDocumentController {
         return ResponseEntity.noContent().build();
     }
 
-    // D-5: URL chuẩn spec /api/v1/notebooks:import
     @PostMapping(path = "/notebooks:import")
     public ResponseEntity<Notebook> importNotebook(@RequestBody Map<String, String> body,
                                                    @AuthenticationPrincipal Object principal) {
@@ -125,7 +123,6 @@ public class NotebookDocumentController {
                 .body(json);
     }
 
-    // D-3: Permissions API
     @GetMapping("/notebooks/{notebookId}/permissions")
     public ResponseEntity<Map<String, Object>> getPermissions(@PathVariable("notebookId") String notebookId,
                                                               @AuthenticationPrincipal Object principal) {

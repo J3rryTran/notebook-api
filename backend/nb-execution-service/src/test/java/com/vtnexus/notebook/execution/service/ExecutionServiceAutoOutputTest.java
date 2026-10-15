@@ -57,7 +57,6 @@ class ExecutionServiceAutoOutputTest {
         kyuubiRestClient = Mockito.mock(KyuubiRestClient.class);
         documentServiceClient = Mockito.mock(DocumentServiceClient.class);
 
-        // Dummy TransactionTemplate that executes immediately
         PlatformTransactionManager txManager = new PlatformTransactionManager() {
             @Override
             public TransactionStatus getTransaction(TransactionDefinition definition) throws TransactionException {
@@ -115,18 +114,15 @@ class ExecutionServiceAutoOutputTest {
         when(runRepository.findById("run-1")).thenReturn(Optional.of(run));
         when(runRepository.findByIdForUpdate("run-1")).thenReturn(Optional.of(run));
 
-        // Kyuubi trả về event FINISHED
         JsonNode eventNode = objectMapper.readTree("{\"state\": \"FINISHED\"}");
         when(kyuubiRestClient.getOperationEvent(eq("op-sql-1"), any(), any())).thenReturn(eventNode);
 
-        // Metadata thật
         JsonNode metaNode = objectMapper.readTree("""
                 {"columns":[{"columnName":"id","dataType":"INT_TYPE","precision":0,"scale":0,"comment":""},
                             {"columnName":"name","dataType":"STRING_TYPE","precision":0,"scale":0,"comment":""}]}
                 """);
         when(kyuubiRestClient.getResultSetMetadata(eq("op-sql-1"), any(), any())).thenReturn(metaNode);
 
-        // Rowset thật: rows[].fields[].value
         JsonNode rowsetNode = objectMapper.readTree("""
                 {"rows":[{"fields":[{"dataType":"INT_TYPE","value":1},{"dataType":"STRING_TYPE","value":"Alice"}]},
                          {"fields":[{"dataType":"INT_TYPE","value":2},{"dataType":"STRING_TYPE","value":"Bob"}]}],
@@ -146,7 +142,6 @@ class ExecutionServiceAutoOutputTest {
         JsonNode tableData = outJson.get("data").get("application/vnd.notebook.table+json");
         assertThat(tableData.get("rows")).hasSize(2);
         assertThat(tableData.get("columns")).hasSize(2);
-        // Kiểm tra ascii table text/plain
         assertThat(outJson.get("data").has("text/plain")).isTrue();
         assertThat(outJson.get("data").get("text/plain").asText()).contains("Alice").contains("Bob");
     }
@@ -179,7 +174,6 @@ class ExecutionServiceAutoOutputTest {
     @Test
     void testSqlResultFetchesAllPagesAndMarksTruncatedOnlyWhenMoreRowsExist() throws Exception {
         NotebookCellRun cellRun = finishedSqlCellRun("crun-pages", "op-pages");
-        // maxRows = 1000; Kyuubi còn dữ liệu sau 1000 dòng
         when(kyuubiRestClient.getOperationRowset(eq("op-pages"), any(), anyInt(), any()))
                 .thenReturn(rowsetPage(0, 500), rowsetPage(500, 500), rowsetPage(1000, 1));
 
@@ -231,7 +225,6 @@ class ExecutionServiceAutoOutputTest {
         JsonNode eventNode = objectMapper.readTree("{\"state\": \"FINISHED\"}");
         when(kyuubiRestClient.getOperationEvent(eq("op-py-1"), any(), any())).thenReturn(eventNode);
 
-        // Rowset Kyuubi thật cho Python stdout (1 cột string_type)
         JsonNode rowsetNode = objectMapper.readTree("""
                 {"rows":[{"fields":[{"dataType":"STRING_TYPE","value":"Hello Python 1"}]},
                          {"fields":[{"dataType":"STRING_TYPE","value":"Hello Python 2"}]}],
@@ -295,19 +288,14 @@ class ExecutionServiceAutoOutputTest {
 
     @Test
     void testSyncKyuubiStateMappings() throws Exception {
-        // Test TIMEOUT -> FAILED, error_code = "TIMEOUT"
         testKyuubiStateMapping("TIMEOUT", "FAILED", "TIMEOUT");
 
-        // Test CANCELED -> CANCELED
         testKyuubiStateMapping("CANCELED", "CANCELED", null);
 
-        // Test CLOSED -> LOST, error_code = "KYUUBI_CLOSED"
         testKyuubiStateMapping("CLOSED", "LOST", "KYUUBI_CLOSED");
 
-        // Test UNKNOWN -> LOST, error_code = "KYUUBI_UNKNOWN"
         testKyuubiStateMapping("UNKNOWN", "LOST", "KYUUBI_UNKNOWN");
 
-        // Test custom/weird state -> LOST, error_code = "KYUUBI_CUSTOM"
         testKyuubiStateMapping("CUSTOM_STATE", "LOST", "KYUUBI_CUSTOM_STATE");
     }
 
@@ -440,9 +428,7 @@ class ExecutionServiceAutoOutputTest {
         assertThatThrownBy(() -> executionService.submitExecution(sessionId, "cell-1", "alice", "Bearer token"))
                 .isInstanceOf(NotebookApiException.class);
 
-        // Verify session executionCountSeq was incremented
         assertThat(session.getExecutionCountSeq()).isEqualTo(1);
-        // B8: FAILED được ghi (và transaction đó kết thúc bình thường, không ném lỗi bên trong)
         assertThat(pendingCellRun.getStatus()).isEqualTo("FAILED");
         assertThat(pendingRun.getStatus()).isEqualTo("FAILED");
         assertThat(pendingRun.getErrorCode()).isEqualTo("KYUUBI_ERROR");

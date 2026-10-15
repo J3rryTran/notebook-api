@@ -102,7 +102,6 @@ class ProxyUserWireMockTest {
         com.vtnexus.notebook.common.config.KyuubiProperties kyuubiProps = new com.vtnexus.notebook.common.config.KyuubiProperties();
         kyuubiProps.setRestUrl(wireMockServer.baseUrl());
         kyuubiProps.setPinToInstance(true);
-        // Đúng như cấu hình thật: allowlist KHÔNG có hive.server2.proxy.user (khóa do hệ thống tự đặt)
         kyuubiProps.setAllowedSessionConfigKeys(List.of("spark.executor.memory"));
         kyuubiRestClient = new KyuubiRestClient(
                 kyuubiProps,
@@ -132,7 +131,6 @@ class ProxyUserWireMockTest {
 
     @Test
     void testAliceDirectUserOpenSessionUsesUserToken() {
-        // ranger_username = alice (bằng username) -> không proxy
         when(documentServiceClient.getRangerUsername("alice")).thenReturn("alice");
         when(sessionRepository.findFirstByNotebookIdAndUserIdAndStatusInOrderByCreatedAtDesc(any(), any(), any()))
                 .thenReturn(Optional.empty());
@@ -150,7 +148,6 @@ class ProxyUserWireMockTest {
         assertThat(res.session().getProxied()).isFalse();
         assertThat(res.session().getEffectiveUser()).isEqualTo("alice");
 
-        // Không gửi hive.server2.proxy.user
         wireMockServer.verify(postRequestedFor(urlEqualTo("/api/v1/sessions"))
                 .withHeader("Authorization", equalTo("Bearer alice-user-token"))
                 .withRequestBody(notMatching(".*hive\\.server2\\.proxy\\.user.*")));
@@ -181,12 +178,10 @@ class ProxyUserWireMockTest {
 
     @Test
     void testBobProxiedUserUsesServiceAccountTokenAndProxyUserConfig() {
-        // ranger_username = svc_bob (khác username bob) -> proxy user
         when(documentServiceClient.getRangerUsername("bob")).thenReturn("svc_bob");
         when(sessionRepository.findFirstByNotebookIdAndUserIdAndStatusInOrderByCreatedAtDesc(any(), any(), any()))
                 .thenReturn(Optional.empty());
 
-        // Keycloak client_credentials token endpoint stub
         wireMockServer.stubFor(post(urlEqualTo("/auth/protocol/openid-connect/token"))
                 .withRequestBody(containing("client_id=notebook-api"))
                 .withRequestBody(containing("client_secret=my-sa-secret"))
@@ -195,7 +190,6 @@ class ProxyUserWireMockTest {
                         .withHeader("Content-Type", "application/json")
                         .withBody("{\"access_token\":\"sa-service-jwt-token\",\"expires_in\":300}")));
 
-        // Kyuubi sessions endpoint stub
         wireMockServer.stubFor(post(urlEqualTo("/api/v1/sessions"))
                 .withHeader("Authorization", equalTo("Bearer sa-service-jwt-token"))
                 .withRequestBody(containing("\"hive.server2.proxy.user\":\"svc_bob\""))
@@ -246,7 +240,7 @@ class ProxyUserWireMockTest {
         com.vtnexus.notebook.common.auth.AuthProperties saAuthProps = new com.vtnexus.notebook.common.auth.AuthProperties();
         saAuthProps.getOidc().setIssuer(wireMockServer.baseUrl() + "/auth");
         saAuthProps.getOidc().setServiceClientId("notebook-api");
-        saAuthProps.getOidc().setServiceClientSecret(""); // missing secret
+        saAuthProps.getOidc().setServiceClientSecret("");
         ServiceAccountTokenProvider noSecretProvider = new ServiceAccountTokenProvider(
                 saAuthProps,
                 new RestTemplateBuilder()

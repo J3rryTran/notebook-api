@@ -37,7 +37,6 @@ class KyuubiAuthProbeTest {
 
     @Test
     void testProbeKyuubiNoneMode_whenAllowUnverifiedFalse_shouldThrowException() {
-        // Kyuubi trả 200 cho ping với Basic ngẫu nhiên
         wireMockServer.stubFor(get(urlEqualTo("/api/v1/ping"))
                 .willReturn(aResponse().withStatus(200)));
 
@@ -66,7 +65,6 @@ class KyuubiAuthProbeTest {
 
     @Test
     void testProbeKyuubiLdapMode_whenKyuubiRequiresBearer_shouldThrowException() {
-        // Mode LDAP nhưng Kyuubi trả 401 kèm WWW-Authenticate: Bearer (Kyuubi đang chạy OIDC)
         wireMockServer.stubFor(get(urlEqualTo("/api/v1/ping"))
                 .willReturn(aResponse()
                         .withStatus(401)
@@ -82,7 +80,6 @@ class KyuubiAuthProbeTest {
 
     @Test
     void testProbeKyuubiDown_shouldNotBlockStartup() {
-        // Wiremock trỏ sang port không tồn tại hoặc down
         int unusedPort = wireMockServer.port();
         wireMockServer.stop();
 

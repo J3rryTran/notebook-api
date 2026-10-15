@@ -3,29 +3,52 @@
   "title": "Values",
   "type": "object",
   "properties": {
-    "topology": {
-      "type": "string",
-      "enum": ["allInOne", "split"]
-    },
     "ha": {
       "type": "object",
       "properties": {
-        "antiAffinity": { "type": "string", "enum": ["soft", "hard", "none"] },
-        "topologyKey": { "type": "string", "minLength": 1 }
+        "antiAffinity": {
+          "type": "string",
+          "enum": [
+            "soft",
+            "hard",
+            "none"
+          ]
+        },
+        "topologyKey": {
+          "type": "string",
+          "minLength": 1
+        }
       }
     },
     "updateStrategy": {
       "type": "object",
       "properties": {
-        "maxUnavailable": { "type": ["integer", "string"] },
-        "maxSurge": { "type": ["integer", "string"] }
+        "maxUnavailable": {
+          "type": [
+            "integer",
+            "string"
+          ]
+        },
+        "maxSurge": {
+          "type": [
+            "integer",
+            "string"
+          ]
+        }
       }
     },
     "podDisruptionBudget": {
       "type": "object",
       "properties": {
-        "enabled": { "type": "boolean" },
-        "minAvailable": { "type": ["integer", "string"] }
+        "enabled": {
+          "type": "boolean"
+        },
+        "minAvailable": {
+          "type": [
+            "integer",
+            "string"
+          ]
+        }
       }
     },
     "replicaCount": {
@@ -35,19 +58,26 @@
     "image": {
       "type": "object",
       "properties": {
-        "repository": { "type": "string" },
-        "tag": { "type": "string" },
+        "repository": {
+          "type": "string"
+        },
+        "tag": {
+          "type": "string"
+        },
         "pullPolicy": {
           "type": "string",
-          "enum": ["Always", "IfNotPresent", "Never"]
+          "enum": [
+            "Always",
+            "IfNotPresent",
+            "Never"
+          ]
         },
-        "pullSecrets": { "type": "array" }
+        "pullSecrets": {
+          "type": "array"
+        }
       }
     },
     "existingSecret": {
-      "type": "string"
-    },
-    "publicUrl": {
       "type": "string"
     },
     "service": {
@@ -55,13 +85,20 @@
       "properties": {
         "type": {
           "type": "string",
-          "enum": ["NodePort", "ClusterIP"]
+          "enum": [
+            "NodePort",
+            "ClusterIP"
+          ]
         },
         "port": {
           "type": "integer"
         },
         "nodePort": {
-          "type": ["integer", "string"]
+          "type": [
+            "integer",
+            "string",
+            "null"
+          ]
         },
         "externalTrafficPolicy": {
           "type": "string"
@@ -73,7 +110,11 @@
       "properties": {
         "mode": {
           "type": "string",
-          "enum": ["oidc", "no-oidc", "ldap"]
+          "enum": [
+            "oidc",
+            "no-oidc",
+            "ldap"
+          ]
         },
         "admins": {
           "type": "array"
@@ -87,6 +128,10 @@
             "cacheTtl": {
               "type": "string",
               "pattern": "^[0-9]+(ms|s|m|h|d)$"
+            },
+            "redirectPath": {
+              "type": "string",
+              "pattern": "^/"
             }
           }
         },
@@ -104,7 +149,10 @@
           }
         },
         "ldap": {
-          "type": "object",
+          "type": [
+            "object",
+            "null"
+          ],
           "properties": {
             "connectTimeout": {
               "type": "string",
@@ -119,9 +167,16 @@
               "properties": {
                 "type": {
                   "type": "string",
-                  "enum": ["PKCS12", "JKS", "PEM"]
+                  "enum": [
+                    "PKCS12",
+                    "JKS",
+                    "PEM"
+                  ]
                 }
               }
+            },
+            "groupObjectClass": {
+              "type": "string"
             }
           }
         }
@@ -151,7 +206,9 @@
     "notebook": {
       "type": "object",
       "properties": {
-        "maxCells": { "type": "integer" },
+        "maxCells": {
+          "type": "integer"
+        },
         "cellSourceMaxSize": {
           "type": "string",
           "pattern": "^[0-9]+(Ki|Mi|Gi)?$"
@@ -164,9 +221,15 @@
           "type": "string",
           "pattern": "^[0-9]+(Ki|Mi|Gi)?$"
         },
-        "maxRevisions": { "type": "integer" },
-        "resultsMaxRows": { "type": "integer" },
-        "eventsPoolSize": { "type": "integer" },
+        "maxRevisions": {
+          "type": "integer"
+        },
+        "resultsMaxRows": {
+          "type": "integer"
+        },
+        "eventsPoolSize": {
+          "type": "integer"
+        },
         "eventsMaxWait": {
           "type": "string",
           "pattern": "^[0-9]+(ms|s|m|h|d)$"

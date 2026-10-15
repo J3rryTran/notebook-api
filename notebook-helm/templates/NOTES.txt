@@ -9,8 +9,8 @@ Notebook {{ .Chart.AppVersion }} (chart {{ .Chart.Version }}, contract 2), auth.
 {{- else }}
    - {{ .Values.secretKeys.authEncryptionKey }} (bắt buộc cho mode no-oidc và ldap: 32 bytes base64)
 {{- if eq .Values.auth.mode "ldap" }}
-{{- if .Values.auth.ldap.userSearchFilter }}
-   - {{ .Values.secretKeys.ldapManagerPassword }} (bắt buộc khi dùng userSearchFilter)
+{{- if .Values.auth.ldap.managerDn }}
+   - {{ .Values.secretKeys.ldapManagerPassword }} (mật khẩu của auth.ldap.managerDn)
 {{- end }}
 {{- if .Values.auth.ldap.trustStore.enabled }}
    - {{ .Values.secretKeys.ldapTruststore }} (file nhị phân truststore mount vào container)
@@ -29,9 +29,10 @@ Notebook {{ .Chart.AppVersion }} (chart {{ .Chart.Version }}, contract 2), auth.
 
 [Keycloak] (realm của issuer {{ .Values.auth.oidc.issuer }}):
    - Client `{{ .Values.auth.oidc.clientId }}`: PUBLIC (Client authentication = Off), Standard flow + PKCE S256.
-   - Valid redirect URIs: `{{ .Values.publicUrl }}/auth/callback`
-   - Valid post logout redirect URIs: `{{ .Values.publicUrl }}/*`
-   - Web origins: `{{ .Values.publicUrl }}`
+   - Valid redirect URIs: `<địa chỉ mở notebook>{{ .Values.auth.oidc.redirectPath | default "/auth/callback" }}`
+   - Valid post logout redirect URIs: `<địa chỉ mở notebook>/*`
+   - Web origins: `<địa chỉ mở notebook>`
+     (<địa chỉ mở notebook> = http(s)://<IP node>:<NodePort của Service {{ include "notebook.fullname" . }}> hoặc host Ingress)
    - Audience mapper thêm `kyuubi` vào `aud` (Kyuubi kiểm aud=kyuubi).
    - Keycloak HTTPS chứng chỉ tự ký: mỗi người dùng mở URL Keycloak và chấp nhận chứng chỉ một lần.
 {{- if .Values.auth.oidc.serviceAccount.enabled }}
@@ -62,8 +63,7 @@ Notebook {{ .Chart.AppVersion }} (chart {{ .Chart.Version }}, contract 2), auth.
 
 [Kiểm tra sau khi deploy]
    - Dashboard -> Service `{{ include "notebook.fullname" . }}` -> External endpoints.
-   - Mở giao diện: {{ .Values.publicUrl }}
-   - Mở cấu hình auth: {{ .Values.publicUrl }}/api/v1/auth/config (phải trả JSON có "mode": "{{ .Values.auth.mode }}")
-   - Mở endpoint bảo vệ: {{ .Values.publicUrl }}/internal/x (phải trả 403 Forbidden)
-   - Mở actuator probe: {{ .Values.publicUrl }}/actuator/health (phải trả 404 Not Found)
+   - Mở giao diện: <địa chỉ mở notebook>/
+   - <địa chỉ>/api/v1/auth/config phải trả JSON có "mode": "{{ .Values.auth.mode }}"
+   - <địa chỉ>/internal/x phải trả 403; <địa chỉ>/actuator/health phải trả 404
    - Dashboard -> Pod -> Logs: kiểm tra log Flyway "Successfully applied" hoặc "Schema ... is up to date".

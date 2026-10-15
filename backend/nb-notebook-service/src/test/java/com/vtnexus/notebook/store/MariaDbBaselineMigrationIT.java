@@ -33,7 +33,6 @@ class MariaDbBaselineMigrationIT {
     @Test
     @DisplayName("T1 (b): DB có sẵn 5 bảng utf8mb3 theo DDL §1.1, Flyway baseline + V2..V5 giữ nguyên dữ liệu, Hibernate validate thành công")
     void testMigrationOnExistingBaselineDb() throws Exception {
-        // 1. Tạo sẵn 5 bảng utf8mb3 đúng theo DDL §1.1 plan
         try (Connection conn = DriverManager.getConnection(mariaDB.getJdbcUrl(), mariaDB.getUsername(), mariaDB.getPassword());
              Statement stmt = conn.createStatement()) {
 
@@ -85,7 +84,6 @@ class MariaDbBaselineMigrationIT {
                     "  PRIMARY KEY (id), UNIQUE KEY uk_app_users_username (username)\n" +
                     ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;");
 
-            // Dữ liệu sẵn có (tiếng Việt, hợp lệ với utf8mb3) để kiểm V2..V5 không làm mất/hỏng dữ liệu
             stmt.execute("INSERT INTO notebooks (id, node_id, notebook_format, default_language, document_json, created_at, updated_at) VALUES " +
                     "('00000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-000000000001', 'SQLLAB_JSON_V1', 'SQL', " +
                     "'{\"schemaVersion\":1,\"defaultLanguage\":\"SQL\",\"metadata\":{},\"parameters\":[],\"cells\":[{\"id\":\"cell-1\",\"type\":\"CODE\",\"language\":\"SQL\",\"source\":\"SELECT ''Thống kê doanh thu''\"}]}', " +
@@ -100,7 +98,6 @@ class MariaDbBaselineMigrationIT {
                     "('50000000-0000-0000-0000-000000000001', 'alice', 'Alice Nguyễn', 'ACTIVE', 'alice', NOW(6), NOW(6))");
         }
 
-        // 2. Khởi động Spring Boot NotebookServiceApplication với baseline-on-migrate=true, baseline-version=1
         try (ConfigurableApplicationContext context = new SpringApplicationBuilder(NotebookServiceApplication.class)
                 .run(
                         "--spring.datasource.url=" + mariaDB.getJdbcUrl(),
@@ -119,7 +116,6 @@ class MariaDbBaselineMigrationIT {
             assertThat(context.isRunning()).isTrue();
         }
 
-        // 3. Dữ liệu cũ còn nguyên, bảng đã utf8mb4_bin, cột mới có giá trị mặc định, lưu được ký tự 4 byte
         try (Connection conn = DriverManager.getConnection(mariaDB.getJdbcUrl(), mariaDB.getUsername(), mariaDB.getPassword());
              Statement stmt = conn.createStatement()) {
             try (ResultSet rs = stmt.executeQuery("SELECT document_json, node_id, name, owner FROM notebooks WHERE id = '00000000-0000-0000-0000-000000000001'")) {
@@ -142,7 +138,6 @@ class MariaDbBaselineMigrationIT {
                 }
                 assertThat(n).isEqualTo(4);
             }
-            // node_id cho phép NULL (notebook do notebook-api tạo), và emoji lưu được sau V3
             stmt.execute("INSERT INTO notebooks (id, node_id, notebook_format, default_language, document_json, created_at, updated_at, name, owner) VALUES " +
                     "('00000000-0000-0000-0000-000000000002', NULL, 'SQLLAB_JSON_V1', 'SQL', '{\"note\":\"📊\"}', NOW(6), NOW(6), 'Báo cáo 📊', 'alice')");
             try (ResultSet rs = stmt.executeQuery("SELECT name FROM notebooks WHERE id = '00000000-0000-0000-0000-000000000002'")) {

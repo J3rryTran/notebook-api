@@ -68,10 +68,6 @@ public class DocumentServiceClient {
                     .maximumSize(10_000)
                     .build();
 
-    /**
-     * Tra {@code app_users.ranger_username} (B4). Lỗi tra cứu thì báo lỗi, không rơi về username và không cache:
-     * rơi về username sẽ cho người dùng chạy sai danh tính trên Ranger.
-     */
     public String getRangerUsername(String user) {
         if (user == null || user.isBlank()) return user;
         return rangerCache.get(user, u -> {

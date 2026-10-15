@@ -44,7 +44,6 @@ class CredentialCryptoTest {
 
         assertFalse(Arrays.equals(enc1, enc2));
 
-        // 12 bytes đầu là nonce, phải khác nhau
         byte[] nonce1 = Arrays.copyOfRange(enc1, 0, 12);
         byte[] nonce2 = Arrays.copyOfRange(enc2, 0, 12);
         assertFalse(Arrays.equals(nonce1, nonce2));

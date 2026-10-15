@@ -91,14 +91,12 @@ public class ExecutionService {
             }
         }
 
-        // C9: Chỉ dùng lại session READY/BUSY
         Optional<NotebookKyuubiSession> existing = sessionRepository
                 .findFirstByNotebookIdAndUserIdAndStatusInOrderByCreatedAtDesc(notebookId, user, List.of("READY", "BUSY"));
         if (existing.isPresent()) {
             return new SessionCreationResult(existing.get(), warnings);
         }
 
-        // B4: Tra ranger_username qua documentServiceClient (cache 5 phút)
         String rangerUser = documentServiceClient.getRangerUsername(user);
         boolean isProxied = false;
         String effectiveAuthHeader = authHeader;
@@ -115,7 +113,6 @@ public class ExecutionService {
             }
         }
 
-        // Mở session mới trên Kyuubi (ngoài transaction)
         Map<String, String> kSession = kyuubiRestClient.openSession(effectiveAuthHeader, validConfigs, isProxied ? rangerUser : null);
 
         NotebookKyuubiSession session = NotebookKyuubiSession.builder()
@@ -139,15 +136,7 @@ public class ExecutionService {
         return getOrCreateSession(notebookId, user, authHeader, null).session();
     }
 
-
-    /**
-     * Vòng đời submit 2 pha (B6, C10):
-     * 1. Transaction 1: khóa session bằng findByIdForUpdate, tăng executionCountSeq, tạo run (PENDING) và cell_run (PENDING).
-     * 2. Ngoài transaction: gọi Kyuubi submitStatement.
-     * 3. Transaction 2: thành công -> cập nhật RUNNING, execution_id, started_at. Thất bại -> cập nhật FAILED, error_code, error_message.
-     */
     public NotebookExecutionDto submitExecution(String sessionId, String cellId, String user, String authHeader) {
-        // Kiểm tra quyền
         NotebookKyuubiSession initialSession = sessionRepository.findById(sessionId)
                 .orElseThrow(() -> new NotebookApiException("NOTEBOOK_SESSION_NOT_FOUND", "Session not found", HttpStatus.NOT_FOUND));
 
@@ -171,7 +160,6 @@ public class ExecutionService {
         final String runId = UUID.randomUUID().toString();
         final String cellRunId = UUID.randomUUID().toString();
 
-        // Pha 1: Transaction 1 (khóa session, tạo PENDING)
         SubmitPreparation prep = transactionTemplate.execute(status -> {
             NotebookKyuubiSession lockedSession = sessionRepository.findByIdForUpdate(sessionId)
                     .orElseThrow(() -> new NotebookApiException("NOTEBOOK_SESSION_NOT_FOUND", "Session not found", HttpStatus.NOT_FOUND));
@@ -214,7 +202,6 @@ public class ExecutionService {
             return new SubmitPreparation(lockedSession.getKyuubiSessionId(), lockedSession.getKyuubiInstance(), count, isProx);
         });
 
-        // Pha 2: Ngoài transaction, gọi Kyuubi submitStatement
         String opId = null;
         Exception submitEx = null;
         try {
@@ -229,8 +216,6 @@ public class ExecutionService {
         final String finalOpId = opId;
         final Exception finalSubmitEx = submitEx;
 
-        // Pha 3: Transaction 2 (cập nhật kết quả submit). Chỉ ghi khi cell còn PENDING để không đè lệnh hủy
-        // đến trong lúc submit. Lỗi submit được lưu FAILED và commit trước, rồi mới ném ra (B8).
         NotebookExecutionDto dto = transactionTemplate.execute(status -> {
             NotebookCellRun cr = cellRunRepository.findByIdForUpdate(cellRunId).orElseThrow();
             NotebookRun r = runRepository.findByIdForUpdate(runId).orElseThrow();
@@ -279,7 +264,6 @@ public class ExecutionService {
             throw new NotebookApiException("KYUUBI_ERROR", "Failed to submit statement to Kyuubi", HttpStatus.BAD_GATEWAY);
         }
 
-        // Người dùng đã hủy trong lúc submit: operation vừa tạo trên Kyuubi phải hủy theo.
         if ("CANCELED".equals(dto.getStatus()) && finalOpId != null) {
             try {
                 String cancelAuth = prep.proxied()
@@ -303,9 +287,6 @@ public class ExecutionService {
 
     private record SubmitPreparation(String kyuubiSessionId, String kyuubiInstance, int executionCount, boolean proxied) {}
 
-    /**
-     * B6 syncCellRun: Ánh xạ đầy đủ trạng thái Kyuubi và xử lý timeout / connection error.
-     */
     public NotebookExecutionDto syncAndGetExecution(String cellRunId, String user, String authHeader) {
         NotebookCellRun cellRun = cellRunRepository.findById(cellRunId)
                 .orElseThrow(() -> new NotebookApiException("EXECUTION_NOT_FOUND", "Execution not found", HttpStatus.NOT_FOUND));
@@ -330,7 +311,6 @@ public class ExecutionService {
                 ? ("Bearer " + serviceAccountTokenProvider.getServiceAccountToken())
                 : authHeader;
 
-        // Gọi Kyuubi NGOÀI transaction
         JsonNode event = null;
         boolean kyuubiUnavailable = false;
         boolean opNotFound = false;
@@ -349,12 +329,10 @@ public class ExecutionService {
             kyuubiUnavailable = true;
         }
 
-        // Nếu Kyuubi không trả lời -> giữ RUNNING, trả DTO kèm stale = true (B6)
         if (kyuubiUnavailable) {
             return toDto(cellRun, run.getNotebookId(), run.getKyuubiSessionRef(), run.getErrorCode(), true);
         }
 
-        // Nếu HTTP 404 operation -> LOST
         if (opNotFound) {
             transactionTemplate.executeWithoutResult(status -> {
                 NotebookCellRun cr = cellRunRepository.findByIdForUpdate(cellRunId).orElse(cellRun);
@@ -376,13 +354,11 @@ public class ExecutionService {
 
         String rawState = event != null && event.has("state") ? event.get("state").asText().toUpperCase() : "UNKNOWN";
 
-        // Đồng bộ log khi còn RUNNING (B5.5)
         if ("INITIALIZED".equals(rawState) || "PENDING".equals(rawState) || "RUNNING".equals(rawState)) {
             syncLogsAndHeartbeat(cellRunId, run.getId(), cellRun.getExecutionId(), instance, effectiveAuth);
             return toDto(cellRunRepository.findById(cellRunId).orElse(cellRun), run.getNotebookId(), run.getKyuubiSessionRef(), run.getErrorCode(), false);
         }
 
-        // Xử lý các trạng thái kết thúc hoặc LOST
         handleOperationTerminalOrLost(cellRunId, run.getId(), rawState, event, instance, effectiveAuth);
 
         NotebookCellRun updatedCell = cellRunRepository.findById(cellRunId).orElse(cellRun);
@@ -411,10 +387,6 @@ public class ExecutionService {
         });
     }
 
-    /**
-     * Phải gọi trong transaction. Khóa dòng cell-run trước khi đọc max(sequence) để hai lần sync đồng thời
-     * (/events và GET) không cấp trùng số thứ tự (UNIQUE cell_run_id, sequence).
-     */
     private void appendLogs(String cellRunId, List<String> lines) {
         cellRunRepository.findByIdForUpdate(cellRunId);
         Long maxSeq = logRepository.findMaxSequenceByCellRunId(cellRunId);
@@ -440,7 +412,6 @@ public class ExecutionService {
         String opId = cellRun.getExecutionId();
 
         if ("FINISHED".equals(state)) {
-            // Lấy metadata và rowset ngoài transaction (B5)
             JsonNode metadata = null;
             JsonNode rowset = null;
             Exception fetchEx = null;
@@ -458,7 +429,6 @@ public class ExecutionService {
             final JsonNode finalRowset = rowset;
             final Exception finalFetchEx = fetchEx;
 
-            // Fetch log cuối cùng
             List<String> logs = Collections.emptyList();
             try {
                 logs = kyuubiRestClient.getOperationLog(opId, instance, 500, authHeader);
@@ -537,7 +507,6 @@ public class ExecutionService {
             final String errorCode = "TIMEOUT".equals(state) ? "TIMEOUT" : "EXECUTION_ERROR";
             final String cleanMsg = "TIMEOUT".equals(state) ? "Execution timed out" : errorInfo.evalue();
 
-            // Logs
             List<String> logs = Collections.emptyList();
             try {
                 logs = kyuubiRestClient.getOperationLog(opId, instance, 500, authHeader);
@@ -556,7 +525,6 @@ public class ExecutionService {
                     }
                     cr.setErrorMessage(cleanMsg);
 
-                    // Tạo nbformat error output
                     ObjectNode errOutput = objectMapper.createObjectNode();
                     errOutput.put("output_type", "error");
                     errOutput.put("ename", errorInfo.ename());
@@ -586,7 +554,6 @@ public class ExecutionService {
             } catch (Exception ignored) {}
 
         } else {
-            // CLOSED, UNKNOWN, hoặc trạng thái lạ -> LOST, error_code = "KYUUBI_" + state
             final String errorCode = "KYUUBI_" + state;
             transactionTemplate.executeWithoutResult(txStatus -> {
                 NotebookCellRun cr = cellRunRepository.findByIdForUpdate(cellRunId).orElse(null);
@@ -612,14 +579,8 @@ public class ExecutionService {
         }
     }
 
-    /** Kích thước một trang FETCH_NEXT khi lấy kết quả từ Kyuubi. */
     private static final int FETCH_PAGE_SIZE = 500;
 
-    /**
-     * Lấy kết quả theo từng trang FETCH_NEXT cho tới khi Kyuubi trả trang rỗng hoặc đã có {@code maxRows + 1}
-     * dòng (dòng dư chỉ để biết còn dữ liệu). Trả về {@code {"rows":[...], "truncated":bool}} cùng dạng
-     * rowset của Kyuubi để {@link KyuubiResultParser} đọc như thường.
-     */
     private JsonNode fetchRows(String opId, String instance, String authHeader) {
         ObjectNode merged = objectMapper.createObjectNode();
         ArrayNode allRows = merged.putArray("rows");
@@ -670,7 +631,6 @@ public class ExecutionService {
                 cellRun.setRowCount((long) parsedRows.size());
             }
         } else {
-            // SQL: table format + plain ascii
             List<KyuubiResultParser.Column> cols = resultParser.columns(metadata);
             List<List<JsonNode>> rows = resultParser.rows(rowset);
 
@@ -696,7 +656,6 @@ public class ExecutionService {
 
             tableJson.put("truncated", rowset != null && rowset.path("truncated").asBoolean(false));
 
-            // Plain text ascii table
             String asciiTable = KyuubiResultParser.renderPlainAsciiTable(cols, rows);
             data.put("text/plain", asciiTable);
 
@@ -717,7 +676,6 @@ public class ExecutionService {
             throw new NotebookApiException("EXECUTION_NOT_FOUND", "Execution not found", HttpStatus.NOT_FOUND);
         }
 
-        // C8: cancelExecution dùng findByIdForUpdate, chỉ đổi khi trạng thái còn PENDING/RUNNING. Đặt cancel_requested=true trước khi gọi Kyuubi.
         boolean proceedCancel = Boolean.TRUE.equals(transactionTemplate.execute(status -> {
             NotebookCellRun cr = cellRunRepository.findByIdForUpdate(cellRunId).orElse(null);
             NotebookRun r = runRepository.findByIdForUpdate(run.getId()).orElse(null);
@@ -794,7 +752,6 @@ public class ExecutionService {
             throw new NotebookApiException("NOTEBOOK_SESSION_NOT_FOUND", "Session not found", HttpStatus.NOT_FOUND);
         }
 
-        // Tìm cell-run RUNNING hoặc PENDING của session đó rồi hủy
         List<NotebookCellRun> runningCellRuns = cellRunRepository.findRunningBySessionId(sessionId);
         for (NotebookCellRun cr : runningCellRuns) {
             cancelExecution(cr.getId(), user, authHeader);
@@ -873,7 +830,6 @@ public class ExecutionService {
         }
         return sb.toString();
     }
-
 
     private NotebookExecutionDto toDto(NotebookCellRun cellRun, String notebookId, String sessionId, String errorCode, boolean stale) {
         return NotebookExecutionDto.builder()

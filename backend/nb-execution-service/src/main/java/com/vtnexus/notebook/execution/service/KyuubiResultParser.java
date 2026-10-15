@@ -11,9 +11,6 @@ import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/**
- * Thuần Java (không phụ thuộc Spring) chuyên phân tích kết quả, metadata, logs và lỗi từ Kyuubi REST.
- */
 public class KyuubiResultParser {
 
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
@@ -24,10 +21,6 @@ public class KyuubiResultParser {
 
     public record ErrorInfo(String ename, String evalue, List<String> traceback) {}
 
-    /**
-     * Parse columns từ Kyuubi GET /api/v1/operations/{op}/resultsetmetadata
-     * JSON mẫu: {"columns":[{"columnName":"id","dataType":"INT_TYPE","precision":0,"scale":0,"comment":""}]}
-     */
     public List<Column> columns(JsonNode metadata) {
         if (metadata == null || !metadata.has("columns") || !metadata.get("columns").isArray()) {
             return Collections.emptyList();
@@ -44,10 +37,6 @@ public class KyuubiResultParser {
         return result;
     }
 
-    /**
-     * Parse rows từ Kyuubi GET /api/v1/operations/{op}/rowset
-     * JSON mẫu: {"rows":[{"fields":[{"dataType":"INT_TYPE","value":1},{"dataType":"STRING_TYPE","value":"a"}]}],"rowCount":1}
-     */
     public List<List<JsonNode>> rows(JsonNode rowset) {
         if (rowset == null || !rowset.has("rows") || !rowset.get("rows").isArray()) {
             return Collections.emptyList();
@@ -57,7 +46,7 @@ public class KyuubiResultParser {
             List<JsonNode> rowValues = new ArrayList<>();
             if (rowNode.has("fields") && rowNode.get("fields").isArray()) {
                 for (JsonNode fieldNode : rowNode.get("fields")) {
-                    rowValues.add(fieldNode.get("value")); // may be null, number, string, boolean
+                    rowValues.add(fieldNode.get("value"));
                 }
             }
             result.add(rowValues);
@@ -65,10 +54,6 @@ public class KyuubiResultParser {
         return result;
     }
 
-    /**
-     * Parse log lines từ Kyuubi GET /api/v1/operations/{op}/log
-     * JSON mẫu: {"logRowSet":["line1","line2"],"rowCount":2}
-     */
     public List<String> logLines(JsonNode log) {
         if (log == null || !log.has("logRowSet") || !log.get("logRowSet").isArray()) {
             return Collections.emptyList();
@@ -80,12 +65,6 @@ public class KyuubiResultParser {
         return lines;
     }
 
-    /**
-     * Phân tách ename / evalue / traceback từ message lỗi.
-     * - Python: tìm traceback theo 'Traceback (most recent call last):', dòng cuối 'Name: value'.
-     * - SQL: 'ename' là lớp exception đầu tiên dạng 'org.apache...Exception', mặc định "SQLException".
-     * - Traceback tách theo '\n', giới hạn 200 dòng.
-     */
     public ErrorInfo error(String message) {
         if (message == null || message.isBlank()) {
             return new ErrorInfo("ExecutionError", "Unknown execution error", Collections.singletonList("Unknown execution error"));
@@ -98,7 +77,6 @@ public class KyuubiResultParser {
             traceback.add(rawLines[i]);
         }
 
-        // Kiểm tra Python Traceback
         boolean isPythonTb = false;
         for (String line : rawLines) {
             if (line.contains("Traceback (most recent call last):")) {
@@ -108,7 +86,6 @@ public class KyuubiResultParser {
         }
 
         if (isPythonTb) {
-            // Duyệt từ dòng cuối lên tìm "NameError: name 'x' is not defined"
             for (int i = rawLines.length - 1; i >= 0; i--) {
                 String line = rawLines[i].trim();
                 Matcher m = PYTHON_ERROR_LINE_PATTERN.matcher(line);
@@ -118,7 +95,6 @@ public class KyuubiResultParser {
                     return new ErrorInfo(ename, evalue, traceback);
                 }
             }
-            // Nếu không khớp regex chính xác, lấy dòng cuối không rỗng
             for (int i = rawLines.length - 1; i >= 0; i--) {
                 String line = rawLines[i].trim();
                 if (!line.isEmpty()) {
@@ -132,14 +108,12 @@ public class KyuubiResultParser {
             return new ErrorInfo("PythonError", message, traceback);
         }
 
-        // Lỗi SQL / Java exception
         Matcher sqlExMatcher = SQL_EXCEPTION_PATTERN.matcher(message);
         String ename = "SQLException";
         if (sqlExMatcher.find()) {
             ename = sqlExMatcher.group(1);
         }
 
-        // evalue: lấy dòng đầu tiên hoặc message sạch
         String evalue = rawLines.length > 0 ? rawLines[0].trim() : message;
         if (evalue.contains(":")) {
             int idx = evalue.indexOf(':');
@@ -149,9 +123,6 @@ public class KyuubiResultParser {
         return new ErrorInfo(ename, evalue.isEmpty() ? message : evalue, traceback);
     }
 
-    /**
-     * Tạo text/plain dạng bảng chữ ascii (tối đa 50 dòng) để export .ipynb
-     */
     public static String renderPlainAsciiTable(List<Column> columns, List<List<JsonNode>> rows) {
         if (columns == null || columns.isEmpty()) {
             return "";
@@ -181,21 +152,18 @@ public class KyuubiResultParser {
         }
 
         StringBuilder sb = new StringBuilder();
-        // Header
         for (int c = 0; c < numCols; c++) {
             sb.append(String.format("%-" + colWidths[c] + "s", columns.get(c).columnName()));
             if (c < numCols - 1) sb.append(" | ");
         }
         sb.append("\n");
 
-        // Separator
         for (int c = 0; c < numCols; c++) {
             sb.append("-".repeat(colWidths[c]));
             if (c < numCols - 1) sb.append("-+-");
         }
         sb.append("\n");
 
-        // Rows
         for (String[] r : formattedRows) {
             for (int c = 0; c < numCols; c++) {
                 sb.append(String.format("%-" + colWidths[c] + "s", r[c]));

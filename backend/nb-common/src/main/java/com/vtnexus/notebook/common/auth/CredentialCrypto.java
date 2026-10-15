@@ -12,8 +12,8 @@ import java.util.Base64;
 public class CredentialCrypto {
 
     private static final String ALGORITHM = "AES/GCM/NoPadding";
-    private static final int GCM_TAG_LENGTH = 128; // bits
-    private static final int NONCE_LENGTH = 12; // bytes
+    private static final int GCM_TAG_LENGTH = 128;
+    private static final int NONCE_LENGTH = 12;
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
     private final SecretKey secretKey;

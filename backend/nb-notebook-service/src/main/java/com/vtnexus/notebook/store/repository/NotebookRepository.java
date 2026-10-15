@@ -12,7 +12,7 @@ import java.util.Optional;
 
 @Repository
 public interface NotebookRepository extends JpaRepository<Notebook, String> {
-    
+
     Optional<Notebook> findByIdAndDeletedAtIsNull(String id);
 
     @Query("SELECT n FROM Notebook n WHERE n.deletedAt IS NULL AND (n.owner = :user OR EXISTS (SELECT p FROM NotebookPermission p WHERE p.notebookId = n.id AND p.principalId = :user))")

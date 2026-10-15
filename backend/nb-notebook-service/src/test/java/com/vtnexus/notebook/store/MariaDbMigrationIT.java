@@ -66,10 +66,8 @@ class MariaDbMigrationIT {
     @DisplayName("T2: Lưu document_json 5 MB, emoji sau V3, và xung đột lock_version (Optimistic Locking)")
     void testDocumentLargeSizeEmojiAndOptimisticLocking() {
         String id = UUID.randomUUID().toString();
-        // 5 MB document_json with emoji
         StringBuilder largeContent = new StringBuilder("{\"cells\":[{\"source\":\"");
         largeContent.append("🚀 Hello MariaDB utf8mb4! Xin chào tiếng Việt có dấu. 🎉 ");
-        // Repeat to reach ~5MB
         String chunk = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()_+-=[]{}|;':,./<>?~`";
         int targetSize = 5 * 1024 * 1024;
         while (largeContent.length() < targetSize) {
@@ -95,12 +93,10 @@ class MariaDbMigrationIT {
         assertThat(saved.getId()).isEqualTo(id);
         assertThat(saved.getLockVersion()).isEqualTo(0L);
 
-        // Đọc lại kiểm tra nội dung 5MB và emoji
         Notebook loaded = notebookRepository.findById(id).orElseThrow();
         assertThat(loaded.getDocumentJson()).isEqualTo(docJson);
         assertThat(loaded.getName()).contains("🚀");
 
-        // Xung đột version lock
         Notebook concurrentCopy = Notebook.builder()
                 .id(saved.getId())
                 .nodeId(saved.getNodeId())
@@ -110,16 +106,14 @@ class MariaDbMigrationIT {
                 .defaultLanguage(saved.getDefaultLanguage())
                 .documentJson("{\"modified\":1}")
                 .currentRevision(saved.getCurrentRevision())
-                .lockVersion(saved.getLockVersion()) // Vẫn giữ version cũ là 0
+                .lockVersion(saved.getLockVersion())
                 .createdAt(saved.getCreatedAt())
                 .updatedAt(Instant.now())
                 .build();
 
-        // Transaction 1 cập nhật thành công -> lock_version tăng lên 1
         loaded.setName("Updated First");
         notebookRepository.save(loaded);
 
-        // Transaction 2 cập nhật với version cũ (0) -> phải ném OptimisticLockingFailureException
         assertThatThrownBy(() -> notebookRepository.save(concurrentCopy))
                 .isInstanceOf(OptimisticLockingFailureException.class);
     }

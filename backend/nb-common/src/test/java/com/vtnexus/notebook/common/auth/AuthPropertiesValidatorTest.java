@@ -141,4 +141,15 @@ class AuthPropertiesValidatorTest {
 
         assertDoesNotThrow(() -> AuthPropertiesValidator.validate(env));
     }
+
+    @org.junit.jupiter.api.Test
+    void oidcRedirectPathMustBeLocalNonApiPath() {
+        assertTrue(AuthPropertiesValidator.isValidRedirectPath("/auth/callback"));
+        assertTrue(AuthPropertiesValidator.isValidRedirectPath("/notebook/oidc-callback"));
+        org.junit.jupiter.api.Assertions.assertFalse(AuthPropertiesValidator.isValidRedirectPath("auth/callback"));
+        org.junit.jupiter.api.Assertions.assertFalse(AuthPropertiesValidator.isValidRedirectPath("//evil.example/cb"));
+        org.junit.jupiter.api.Assertions.assertFalse(AuthPropertiesValidator.isValidRedirectPath("https://evil.example/cb"));
+        org.junit.jupiter.api.Assertions.assertFalse(AuthPropertiesValidator.isValidRedirectPath("/api/v1/cb"));
+        org.junit.jupiter.api.Assertions.assertFalse(AuthPropertiesValidator.isValidRedirectPath("/internal/cb"));
+    }
 }

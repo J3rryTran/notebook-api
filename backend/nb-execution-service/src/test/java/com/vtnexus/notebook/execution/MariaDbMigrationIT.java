@@ -31,8 +31,6 @@ class MariaDbMigrationIT {
     static {
         mariaDB.start();
 
-        // Execution service has flyway.enabled=false.
-        // We run Flyway to migrate the schema from nb-notebook-service migrations so Hibernate ddl-auto: validate can pass.
         Flyway flyway = Flyway.configure()
                 .dataSource(mariaDB.getJdbcUrl(), mariaDB.getUsername(), mariaDB.getPassword())
                 .locations("filesystem:../nb-notebook-service/src/main/resources/db/migration")

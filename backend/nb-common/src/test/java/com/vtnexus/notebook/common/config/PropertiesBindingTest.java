@@ -10,9 +10,6 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/**
- * Khóa do chart render (ConfigMap application.yaml) phải bind được vào @ConfigurationProperties.
- */
 class PropertiesBindingTest {
 
     @Test

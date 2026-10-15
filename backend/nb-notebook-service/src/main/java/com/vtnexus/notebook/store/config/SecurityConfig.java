@@ -54,7 +54,6 @@ public class SecurityConfig {
             .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/actuator/**", "/internal/**", "/api/v1/auth/config").permitAll()
-                // /api/v1/auth/login được permitAll nhưng vẫn qua CSRF filter (nhận cookie từ /config trước)
                 .requestMatchers("/api/v1/auth/login").permitAll()
                 .anyRequest().authenticated()
             )

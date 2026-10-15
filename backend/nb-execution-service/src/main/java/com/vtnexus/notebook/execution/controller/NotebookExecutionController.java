@@ -22,11 +22,6 @@ import java.util.concurrent.ForkJoinPool;
 @RequestMapping("/api/v1")
 public class NotebookExecutionController {
 
-    /**
-     * Credential gửi Kyuubi cho request hiện tại: đúng credential mà filter xác thực vừa kiểm
-     * (Bearer ở oidc, Basic giải mã từ phiên cookie ở no-oidc/ldap). Không đọc header Authorization
-     * thô: ở mode cookie, header đó do client tự gửi và chưa được xác thực.
-     */
     private static String kyuubiCredential() {
         String auth = KyuubiCredentialHolder.getAuthHeader();
         if (auth == null || auth.isBlank()) {
@@ -35,12 +30,9 @@ public class NotebookExecutionController {
         return auth;
     }
 
-
     private final ExecutionService executionService;
     private final NotebookKyuubiSessionRepository sessionRepository;
     private final NotebookCellRunRepository cellRunRepository;
-
-
 
     @PostMapping("/notebooks/{notebookId}/sessions")
     public ResponseEntity<Map<String, Object>> getOrCreateSession(
@@ -68,7 +60,6 @@ public class NotebookExecutionController {
         resp.put("warnings", result.warnings());
         return ResponseEntity.ok(resp);
     }
-
 
     @PostMapping("/notebook-sessions/{sessionId}/executions")
     public ResponseEntity<NotebookExecutionDto> submitExecution(
@@ -321,7 +312,6 @@ public class NotebookExecutionController {
         String user = principal != null ? principal.toString() : "anonymous";
         String auth = kyuubiCredential();
 
-        // 1. Kiểm tra kyuubi /ping cache 10s
         long now = System.currentTimeMillis();
         boolean kyuubiOk;
         if (cachedKyuubiPing != null && (now - lastKyuubiPingTime < 10000)) {
@@ -332,7 +322,6 @@ public class NotebookExecutionController {
             lastKyuubiPingTime = now;
         }
 
-        // 2. Persistence check SELECT 1
         boolean persistenceOk = false;
         try (java.sql.Connection conn = dataSource.getConnection();
              java.sql.Statement stmt = conn.createStatement()) {
@@ -340,7 +329,6 @@ public class NotebookExecutionController {
             persistenceOk = true;
         } catch (Exception ignored) {}
 
-        // 3. Active / queued runs theo user
         long activeCount = cellRunRepository.countByUserAndStatus(user, "RUNNING");
         long queuedCount = cellRunRepository.countByUserAndStatus(user, "PENDING");
         long userSessions = sessionRepository.countByUserIdAndStatusIn(user, java.util.List.of("READY", "BUSY"));

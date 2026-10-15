@@ -27,7 +27,6 @@ public class SessionCookieFilter extends OncePerRequestFilter {
 
     public static final String COOKIE_NAME = "NB_SESSION";
 
-
     private final SessionResolver sessionResolver;
     private final ObjectMapper objectMapper;
 
@@ -53,7 +52,6 @@ public class SessionCookieFilter extends OncePerRequestFilter {
             return;
         }
 
-        // Chỉ bước tra phiên nằm trong try/catch: lỗi của controller phía sau không được đổi thành 401.
         SessionInfo info;
         try {
             info = sessionResolver.resolve(sessionId);

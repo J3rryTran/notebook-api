@@ -1,5 +1,7 @@
 # Hợp đồng chart ↔ image ↔ code (contract 2)
 
+> Cập nhật 2026-10-15: khóa `notebook.public-url` đã bỏ; thay bằng `notebook.auth.oidc.redirect-path` (values `auth.oidc.redirectPath`). Các dòng nhắc `public-url` bên dưới là lịch sử.
+
 Ngày: 2026-10-15. Đi kèm `plan/chart-design.md`. Đối tượng: AI agent sửa code và người nghiệm thu.
 
 **Nguyên tắc: chart, image và code là một khối.** Chart mới truyền cấu hình theo cách khác chart

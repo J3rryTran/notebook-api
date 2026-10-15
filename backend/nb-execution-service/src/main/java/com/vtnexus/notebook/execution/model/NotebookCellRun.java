@@ -61,7 +61,7 @@ public class NotebookCellRun {
     private String errorMessage;
 
     @Column(name = "execution_id", length = 128)
-    private String executionId; // Kyuubi operation ID
+    private String executionId;
 
     @Column(name = "source", columnDefinition = "LONGTEXT")
     private String source;
