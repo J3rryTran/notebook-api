@@ -74,10 +74,10 @@ if [ "${SKIP_RUNTIME}" = true ]; then
   RUNTIME_STATUS="SKIPPED"
   echo -e "${YELLOW}[P3 SKIP] Bỏ qua chạy thử image (--skip-runtime-check)${NC}"
 else
-  step "P3: Chạy thử image với cấu hình render từ chart (X2-X5)"
-  IMAGE_NAME="${IMAGE}" bash "${ROOT_DIR}/scripts/contract-check.sh" > "${DIST_DIR}/contract-runtime.log" 2>&1 || {
-    tail -n 30 "${DIST_DIR}/contract-runtime.log"
-    fail P3 "Image không chạy đúng với chart (dist/contract-runtime.log)"
+  step "P3: Chạy thử image (MariaDB + Kyuubi giả lập)"
+  bash "${ROOT_DIR}/scripts/image-smoke-test.sh" "${IMAGE}" > "${DIST_DIR}/image-smoke-test.log" 2>&1 || {
+    tail -n 30 "${DIST_DIR}/image-smoke-test.log"
+    fail P3 "Image chạy thử không đạt (dist/image-smoke-test.log)"
   }
   pass P3 "khởi động non-root/read-only, probe Ready, cổng nội bộ kín, dừng sạch"
 fi

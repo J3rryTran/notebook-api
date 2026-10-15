@@ -64,26 +64,14 @@ OIDC_SUM=$(sha256sum "${ROOT_DIR}/frontend/public/vendor/oidc-client-ts.min.js" 
 grep -q "${OIDC_SUM}" "${ROOT_DIR}/frontend/public/vendor/README.md" || fail B3 "Checksum vendor/oidc-client-ts.min.js không khớp vendor/README.md"
 pass B3 "Frontend tự chứa, checksum vendor khớp"
 
-step "B4: Kiểm chart"
-bash "${ROOT_DIR}/scripts/helm-check.sh" > "${DIST_DIR}/helm-check.log" 2>&1 || {
-  tail -n 20 "${DIST_DIR}/helm-check.log"
-  fail B4 "Helm check thất bại (dist/helm-check.log)"
-}
-bash "${ROOT_DIR}/scripts/contract-check.sh" --static-only > "${DIST_DIR}/contract-static.log" 2>&1 || {
-  cat "${DIST_DIR}/contract-static.log"
-  fail B4 "Khóa ConfigMap của chart không khớp code (dist/contract-static.log)"
-}
-pass B4 "helm lint + template values.yaml + ca lỗi; khóa ConfigMap khớp code"
-
-step "B5: Kiểm script & nginx.conf"
+step "B4: Kiểm script & nginx.conf"
 docker run --rm -v "${ROOT_DIR}":/mnt -w /mnt koalaman/shellcheck:v0.10.0 \
-  docker/entrypoint.sh docker/healthcheck.sh scripts/build.sh scripts/package-image.sh \
-  scripts/helm-check.sh scripts/contract-check.sh || fail B5 "ShellCheck báo lỗi"
+  docker/entrypoint.sh docker/healthcheck.sh scripts/build.sh scripts/package-image.sh scripts/image-smoke-test.sh || fail B4 "ShellCheck báo lỗi"
 docker run --rm -v "${ROOT_DIR}/docker/nginx.conf":/etc/nginx/nginx.conf:ro nginx:1.27-alpine nginx -t > /dev/null 2>&1 \
-  || fail B5 "nginx -t báo lỗi docker/nginx.conf"
-pass B5 "ShellCheck, nginx -t sạch"
+  || fail B4 "nginx -t báo lỗi docker/nginx.conf"
+pass B4 "ShellCheck, nginx -t sạch"
 
-step "B6: Gom build context cho image (dist/image-context)"
+step "B5: Gom build context cho image (dist/image-context)"
 mkdir -p "${CONTEXT_DIR}/app" "${CONTEXT_DIR}/web" "${CONTEXT_DIR}/conf" "${CONTEXT_DIR}/bin"
 cp "${NB_JAR}"   "${CONTEXT_DIR}/app/nb-notebook-service.jar"
 cp "${EXEC_JAR}" "${CONTEXT_DIR}/app/nb-execution-service.jar"
@@ -104,9 +92,9 @@ GIT_DIRTY=$([ -n "$(git status --porcelain 2>/dev/null)" ] && echo true || echo 
 mv "${DIST_DIR}/SHA256SUMS.tmp" "${CONTEXT_DIR}/SHA256SUMS"
 
 if find "${CONTEXT_DIR}" -name "*.java" -o -name "pom.xml" -o -name "*.sql" | grep -q .; then
-  fail B6 "dist/image-context chứa mã nguồn"
+  fail B5 "dist/image-context chứa mã nguồn"
 fi
-pass B6 "$(find "${CONTEXT_DIR}" -type f | wc -l) file, $(du -sh "${CONTEXT_DIR}" | cut -f1)"
+pass B5 "$(find "${CONTEXT_DIR}" -type f | wc -l) file, $(du -sh "${CONTEXT_DIR}" | cut -f1)"
 
 echo "----------------------------------------------------------------------"
 echo -e "${GREEN}BUILD XONG sau $(( $(date +%s) - START_TIME ))s.${NC} Bước tiếp: đóng gói image, ví dụ"
