@@ -7,7 +7,6 @@ import com.github.benmanes.caffeine.cache.Caffeine;
 import com.vtnexus.notebook.common.exception.NotebookApiException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 
@@ -35,13 +34,12 @@ public class BearerDelegationAuthenticator {
     private final Cache<String, CachedPrincipal> tokenCache;
 
     public BearerDelegationAuthenticator(
-            @Value("${kyuubi.rest-url:http://localhost:10099}") String kyuubiRestUrl,
-            @Value("${notebook.auth.usernameClaim:preferred_username}") String usernameClaim,
-            @Value("${notebook.auth.cacheTtl:60s}") Duration cacheTtl,
+            com.vtnexus.notebook.common.config.KyuubiProperties kyuubiProperties,
+            AuthProperties authProperties,
             ObjectMapper objectMapper) {
-        this.kyuubiRestUrl = kyuubiRestUrl.replaceAll("/+$", "");
-        this.usernameClaim = usernameClaim;
-        this.cacheTtl = cacheTtl;
+        this.kyuubiRestUrl = kyuubiProperties.getRestUrl().replaceAll("/+$", "");
+        this.usernameClaim = authProperties.getUsernameClaim();
+        this.cacheTtl = authProperties.getCacheTtl();
         this.objectMapper = objectMapper;
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(5))

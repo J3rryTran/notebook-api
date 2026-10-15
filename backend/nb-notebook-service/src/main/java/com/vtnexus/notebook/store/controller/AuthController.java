@@ -10,7 +10,6 @@ import com.vtnexus.notebook.store.service.LdapAuthenticator;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -31,6 +30,7 @@ public class AuthController {
     private final AuthProperties authProperties;
     private final AuthSessionService sessionService;
     private final LdapAuthenticator ldapAuthenticator;
+    private final com.vtnexus.notebook.common.config.NotebookProperties notebookProperties;
     private final String kyuubiRestUrl;
     private final HttpClient httpClient;
     private final org.springframework.core.env.Environment environment;
@@ -39,12 +39,14 @@ public class AuthController {
             AuthProperties authProperties,
             AuthSessionService sessionService,
             LdapAuthenticator ldapAuthenticator,
-            @Value("${kyuubi.rest-url:http://localhost:10099}") String kyuubiRestUrl,
+            com.vtnexus.notebook.common.config.KyuubiProperties kyuubiProperties,
+            com.vtnexus.notebook.common.config.NotebookProperties notebookProperties,
             org.springframework.core.env.Environment environment) {
         this.authProperties = authProperties;
         this.sessionService = sessionService;
         this.ldapAuthenticator = ldapAuthenticator;
-        this.kyuubiRestUrl = kyuubiRestUrl.replaceAll("/+$", "");
+        this.notebookProperties = notebookProperties;
+        this.kyuubiRestUrl = kyuubiProperties.getRestUrl().replaceAll("/+$", "");
         this.environment = environment;
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(5))
@@ -55,10 +57,21 @@ public class AuthController {
         return environment.acceptsProfiles(org.springframework.core.env.Profiles.of("dev"));
     }
 
+    private boolean isSecureCookie() {
+        if (isDev()) {
+            return false;
+        }
+        String publicUrl = notebookProperties.getPublicUrl();
+        if (publicUrl != null && !publicUrl.isBlank()) {
+            return publicUrl.trim().toLowerCase().startsWith("https://");
+        }
+        return true;
+    }
+
     private void addSessionCookie(HttpServletResponse response, String sessionId, Duration maxAge) {
         org.springframework.http.ResponseCookie cookie = org.springframework.http.ResponseCookie.from(SessionCookieFilter.COOKIE_NAME, sessionId)
                 .httpOnly(true)
-                .secure(!isDev())
+                .secure(isSecureCookie())
                 .sameSite("Strict")
                 .path("/")
                 .maxAge(maxAge)

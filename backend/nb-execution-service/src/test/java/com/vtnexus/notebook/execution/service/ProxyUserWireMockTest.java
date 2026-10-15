@@ -90,20 +90,29 @@ class ProxyUserWireMockTest {
         };
         TransactionTemplate txTemplate = new TransactionTemplate(txManager);
 
+        com.vtnexus.notebook.common.auth.AuthProperties saAuthProps = new com.vtnexus.notebook.common.auth.AuthProperties();
+        saAuthProps.getOidc().setIssuer(wireMockServer.baseUrl() + "/auth");
+        saAuthProps.getOidc().setServiceClientId("notebook-api");
+        saAuthProps.getOidc().setServiceClientSecret("my-sa-secret");
         serviceAccountTokenProvider = new ServiceAccountTokenProvider(
-                wireMockServer.baseUrl() + "/auth",
-                "notebook-api",
-                "my-sa-secret",
+                saAuthProps,
                 new RestTemplateBuilder()
         );
 
+        com.vtnexus.notebook.common.config.KyuubiProperties kyuubiProps = new com.vtnexus.notebook.common.config.KyuubiProperties();
+        kyuubiProps.setRestUrl(wireMockServer.baseUrl());
+        kyuubiProps.setPinToInstance(true);
+        kyuubiProps.setAllowedSessionConfigKeys(List.of("hive.server2.proxy.user", "spark.executor.memory"));
         kyuubiRestClient = new KyuubiRestClient(
-                wireMockServer.baseUrl(),
-                true,
-                List.of("hive.server2.proxy.user", "spark.executor.memory"),
+                kyuubiProps,
                 new RestTemplateBuilder(),
                 objectMapper
         );
+
+        com.vtnexus.notebook.common.auth.AuthProperties authProps = new com.vtnexus.notebook.common.auth.AuthProperties();
+        authProps.setMode("oidc");
+        com.vtnexus.notebook.common.config.NotebookProperties nbProps = new com.vtnexus.notebook.common.config.NotebookProperties();
+        nbProps.getResults().setMaxRows(1000);
 
         executionService = new ExecutionService(
                 sessionRepository,
@@ -115,8 +124,8 @@ class ProxyUserWireMockTest {
                 objectMapper,
                 txTemplate,
                 serviceAccountTokenProvider,
-                "oidc",
-                1000
+                authProps,
+                nbProps
         );
     }
 
@@ -210,12 +219,19 @@ class ProxyUserWireMockTest {
 
     @Test
     void testMissingSecretThrows503ProxyUnavailable() {
+        com.vtnexus.notebook.common.auth.AuthProperties saAuthProps = new com.vtnexus.notebook.common.auth.AuthProperties();
+        saAuthProps.getOidc().setIssuer(wireMockServer.baseUrl() + "/auth");
+        saAuthProps.getOidc().setServiceClientId("notebook-api");
+        saAuthProps.getOidc().setServiceClientSecret(""); // missing secret
         ServiceAccountTokenProvider noSecretProvider = new ServiceAccountTokenProvider(
-                wireMockServer.baseUrl() + "/auth",
-                "notebook-api",
-                "", // missing secret
+                saAuthProps,
                 new RestTemplateBuilder()
         );
+
+        com.vtnexus.notebook.common.auth.AuthProperties authProps = new com.vtnexus.notebook.common.auth.AuthProperties();
+        authProps.setMode("oidc");
+        com.vtnexus.notebook.common.config.NotebookProperties nbProps = new com.vtnexus.notebook.common.config.NotebookProperties();
+        nbProps.getResults().setMaxRows(1000);
 
         ExecutionService noSecretService = new ExecutionService(
                 sessionRepository,
@@ -231,8 +247,8 @@ class ProxyUserWireMockTest {
                     public void rollback(TransactionStatus s) {}
                 }),
                 noSecretProvider,
-                "oidc",
-                1000
+                authProps,
+                nbProps
         );
 
         when(documentServiceClient.getRangerUsername("bob")).thenReturn("svc_bob");

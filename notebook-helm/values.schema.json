@@ -1,0 +1,156 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "title": "Values",
+  "type": "object",
+  "properties": {
+    "topology": {
+      "type": "string",
+      "enum": ["allInOne", "split"]
+    },
+    "replicaCount": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "image": {
+      "type": "object",
+      "properties": {
+        "repository": { "type": "string" },
+        "tag": { "type": "string" },
+        "pullPolicy": {
+          "type": "string",
+          "enum": ["Always", "IfNotPresent", "Never"]
+        },
+        "pullSecrets": { "type": "array" }
+      }
+    },
+    "existingSecret": {
+      "type": "string"
+    },
+    "publicUrl": {
+      "type": "string"
+    },
+    "service": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["NodePort", "ClusterIP"]
+        },
+        "port": {
+          "type": "integer"
+        },
+        "nodePort": {
+          "type": ["integer", "string"]
+        },
+        "externalTrafficPolicy": {
+          "type": "string"
+        }
+      }
+    },
+    "auth": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": ["oidc", "no-oidc", "ldap"]
+        },
+        "admins": {
+          "type": "array"
+        },
+        "allowUnverified": {
+          "type": "boolean"
+        },
+        "oidc": {
+          "type": "object",
+          "properties": {
+            "cacheTtl": {
+              "type": "string",
+              "pattern": "^[0-9]+(ms|s|m|h|d)$"
+            }
+          }
+        },
+        "session": {
+          "type": "object",
+          "properties": {
+            "ttl": {
+              "type": "string",
+              "pattern": "^[0-9]+(ms|s|m|h|d)$"
+            },
+            "recheck": {
+              "type": "string",
+              "pattern": "^[0-9]+(ms|s|m|h|d)$"
+            }
+          }
+        },
+        "ldap": {
+          "type": "object",
+          "properties": {
+            "connectTimeout": {
+              "type": "string",
+              "pattern": "^[0-9]+(ms|s|m|h|d)$"
+            },
+            "readTimeout": {
+              "type": "string",
+              "pattern": "^[0-9]+(ms|s|m|h|d)$"
+            },
+            "trustStore": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "enum": ["PKCS12", "JKS", "PEM"]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "kyuubi": {
+      "type": "object",
+      "properties": {
+        "connectTimeout": {
+          "type": "string",
+          "pattern": "^[0-9]+(ms|s|m|h|d)$"
+        },
+        "requestTimeout": {
+          "type": "string",
+          "pattern": "^[0-9]+(ms|s|m|h|d)$"
+        },
+        "sessionOpenTimeout": {
+          "type": "string",
+          "pattern": "^[0-9]+(ms|s|m|h|d)$"
+        },
+        "idleSessionTimeout": {
+          "type": "string",
+          "pattern": "^[0-9]+(ms|s|m|h|d)$"
+        }
+      }
+    },
+    "notebook": {
+      "type": "object",
+      "properties": {
+        "maxCells": { "type": "integer" },
+        "cellSourceMaxSize": {
+          "type": "string",
+          "pattern": "^[0-9]+(Ki|Mi|Gi)?$"
+        },
+        "documentMaxSize": {
+          "type": "string",
+          "pattern": "^[0-9]+(Ki|Mi|Gi)?$"
+        },
+        "importMaxSize": {
+          "type": "string",
+          "pattern": "^[0-9]+(Ki|Mi|Gi)?$"
+        },
+        "maxRevisions": { "type": "integer" },
+        "resultsMaxRows": { "type": "integer" },
+        "eventsPoolSize": { "type": "integer" },
+        "eventsMaxWait": {
+          "type": "string",
+          "pattern": "^[0-9]+(ms|s|m|h|d)$"
+        }
+      }
+    }
+  }
+}

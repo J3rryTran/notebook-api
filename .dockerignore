@@ -1,23 +1,14 @@
-# Git and IDE
-.git/
-.gitignore
-.idea/
-*.iml
-.vscode/
-
-# Maven build outputs (giữ lại file *.jar để copy vào image)
-**/target/*
-!**/target/*.jar
-
-# Distribution archives
-dist/
-dist.tar.gz
-
-# Node / Frontend temporary
-node_modules/
-dist/
-npm-debug.log
-
-# Miscellaneous
-*.log
-scratch/
+*
+!backend/
+backend/*
+!backend/nb-*/
+backend/nb-*/*
+!backend/nb-*/target/
+backend/nb-*/target/*
+!backend/nb-*/target/*.jar
+!frontend/
+frontend/*
+!frontend/public/
+!frontend/public/**
+!docker/
+!docker/**

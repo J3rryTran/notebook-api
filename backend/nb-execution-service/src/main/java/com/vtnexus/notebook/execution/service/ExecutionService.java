@@ -18,7 +18,6 @@ import com.vtnexus.notebook.execution.repository.NotebookKyuubiSessionRepository
 import com.vtnexus.notebook.execution.repository.NotebookRunRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -55,8 +54,8 @@ public class ExecutionService {
             ObjectMapper objectMapper,
             TransactionTemplate transactionTemplate,
             ServiceAccountTokenProvider serviceAccountTokenProvider,
-            @Value("${notebook.auth.mode:oidc}") String authMode,
-            @Value("${notebook.results.max-rows:1000}") int maxRows) {
+            com.vtnexus.notebook.common.auth.AuthProperties authProperties,
+            com.vtnexus.notebook.common.config.NotebookProperties notebookProperties) {
         this.sessionRepository = sessionRepository;
         this.runRepository = runRepository;
         this.cellRunRepository = cellRunRepository;
@@ -66,9 +65,10 @@ public class ExecutionService {
         this.objectMapper = objectMapper;
         this.transactionTemplate = transactionTemplate;
         this.serviceAccountTokenProvider = serviceAccountTokenProvider;
-        this.authMode = authMode != null ? authMode.toLowerCase() : "oidc";
+        String mode = authProperties.getMode();
+        this.authMode = mode != null ? mode.toLowerCase() : "oidc";
         this.resultParser = new KyuubiResultParser();
-        this.maxRows = maxRows;
+        this.maxRows = notebookProperties.getResults().getMaxRows();
     }
 
     public record SessionCreationResult(NotebookKyuubiSession session, List<String> warnings) {}

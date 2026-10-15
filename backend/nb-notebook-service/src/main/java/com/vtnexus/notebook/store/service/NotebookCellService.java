@@ -6,7 +6,6 @@ import com.vtnexus.notebook.store.dto.NotebookCellDto;
 import com.vtnexus.notebook.store.model.Notebook;
 import com.vtnexus.notebook.store.model.NotebookDocument;
 import com.vtnexus.notebook.store.repository.NotebookRepository;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -27,13 +26,12 @@ public class NotebookCellService {
             NotebookRepository notebookRepository,
             NotebookService notebookService,
             ObjectMapper objectMapper,
-            @Value("${notebook.cell.source.max-size:1048576}") int maxSourceSize,
-            @Value("${notebook.max.cells:500}") int maxCells) {
+            com.vtnexus.notebook.common.config.NotebookProperties notebookProperties) {
         this.notebookRepository = notebookRepository;
         this.notebookService = notebookService;
         this.objectMapper = objectMapper;
-        this.maxSourceSize = maxSourceSize;
-        this.maxCells = maxCells;
+        this.maxSourceSize = notebookProperties.getCell().getSource().getMaxSize();
+        this.maxCells = notebookProperties.getMax().getCells();
     }
 
     public List<NotebookCellDto> getCells(String notebookId, String user) {

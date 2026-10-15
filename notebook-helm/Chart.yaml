@@ -1,6 +1,9 @@
 apiVersion: v2
 name: notebook
-description: Helm chart for Standalone Notebook connecting to Kyuubi REST and Spark engines
+description: Notebook SQL/PySpark trên Kyuubi REST, lưu MariaDB
 type: application
-version: 0.1.0
+version: 0.2.0
 appVersion: "0.1.0"
+kubeVersion: ">=1.23.0-0"
+annotations:
+  notebook/contract: "2"

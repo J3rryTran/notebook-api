@@ -7,7 +7,6 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.vtnexus.notebook.common.exception.NotebookApiException;
 import com.vtnexus.notebook.store.model.Notebook;
 import com.vtnexus.notebook.store.model.NotebookDocument;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
@@ -23,10 +22,10 @@ public class IpynbConversionService {
     public IpynbConversionService(
             ObjectMapper objectMapper,
             NotebookService notebookService,
-            @Value("${notebook.import.max-size:16777216}") int maxImportSize) {
+            com.vtnexus.notebook.common.config.NotebookProperties notebookProperties) {
         this.objectMapper = objectMapper;
         this.notebookService = notebookService;
-        this.maxImportSize = maxImportSize;
+        this.maxImportSize = notebookProperties.getAnImport().getMaxSize();
     }
 
     public Notebook importNotebook(String format, String name, String folderId, String contentJson, String user) {

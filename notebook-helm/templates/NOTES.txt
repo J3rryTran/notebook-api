@@ -1,0 +1,47 @@
+CHỨC MỪNG: Notebook Helm Chart đã được render thành công!
+
+1. Checklist Secret `{{ .Values.existingSecret }}` cần có các keys:
+   - db-password (bắt buộc cho kết nối MariaDB)
+{{- if eq .Values.auth.mode "oidc" }}
+{{- if .Values.auth.oidc.serviceAccount.enabled }}
+   - oidc-client-secret (bắt buộc khi auth.oidc.serviceAccount.enabled=true)
+{{- end }}
+{{- else }}
+   - auth-encryption-key (bắt buộc cho mode no-oidc và ldap: 32 bytes base64)
+{{- if eq .Values.auth.mode "ldap" }}
+{{- if .Values.auth.ldap.userSearchFilter }}
+   - ldap-manager-password (bắt buộc khi dùng userSearchFilter)
+{{- end }}
+{{- if .Values.auth.ldap.trustStore.enabled }}
+   - ldap-truststore (file nhị phân truststore mount vào container)
+{{- if ne .Values.auth.ldap.trustStore.type "PEM" }}
+   - ldap-truststore-password (bắt buộc khi type không phải PEM)
+{{- end }}
+{{- end }}
+{{- end }}
+{{- end }}
+
+2. MariaDB:
+   User `{{ .Values.mariadb.username }}` phải có quyền trên database `{{ .Values.mariadb.database }}.*` (xem backend/sql/000_user.sql).
+
+{{- if eq .Values.auth.mode "oidc" }}
+3. Keycloak OIDC Client:
+   - Client `{{ .Values.auth.oidc.clientId }}` phải là PUBLIC, Access Type = Public.
+   - Valid redirect URIs phải có: `{{ .Values.publicUrl }}/auth/callback`
+   - Valid post logout redirect URIs: `{{ .Values.publicUrl }}/*`
+   - Web origins: `{{ .Values.publicUrl }}`
+   - Token Mapper: audience mapper `kyuubi`.
+   - Lưu ý: Nếu Keycloak chạy HTTPS với chứng chỉ tự ký (self-signed), người dùng cần truy cập trực tiếp URL Keycloak trên trình duyệt và chấp nhận chứng chỉ một lần.
+{{- if .Values.auth.oidc.serviceAccount.enabled }}
+4. Kyuubi Proxy User:
+   - Kyuubi phải cấu hình `hadoop.proxyuser.{{ .Values.auth.oidc.serviceAccount.clientId }}.users` và `hosts`.
+{{- end }}
+{{- end }}
+
+5. Kiểm tra sau khi deploy:
+   - Dashboard -> Service `{{ include "notebook.fullname" . }}` -> External endpoints.
+   - Mở giao diện: {{ .Values.publicUrl }}
+   - Mở cấu hình auth: {{ .Values.publicUrl }}/api/v1/auth/config (phải trả JSON có "mode": "{{ .Values.auth.mode }}")
+   - Mở endpoint bảo vệ: {{ .Values.publicUrl }}/internal/x (phải trả 403 Forbidden)
+   - Mở actuator probe: {{ .Values.publicUrl }}/actuator/health (phải trả 404 Not Found)
+   - Dashboard -> Pod -> Logs: kiểm tra log Flyway "Successfully applied" hoặc "Schema ... is up to date".

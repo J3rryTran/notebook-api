@@ -5,7 +5,6 @@ import com.vtnexus.notebook.store.dto.NotebookCellDto;
 import com.vtnexus.notebook.store.model.Notebook;
 import com.vtnexus.notebook.store.service.NotebookCellService;
 import com.vtnexus.notebook.store.service.NotebookService;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -30,11 +29,11 @@ public class InternalAccessController {
             NotebookService notebookService,
             NotebookCellService cellService,
             com.vtnexus.notebook.store.repository.AppUserRepository appUserRepository,
-            @Value("${notebook.internalToken:${notebook.internal-token}}") String internalToken) {
+            com.vtnexus.notebook.common.config.NotebookProperties notebookProperties) {
         this.notebookService = notebookService;
         this.cellService = cellService;
         this.appUserRepository = appUserRepository;
-        this.internalToken = internalToken;
+        this.internalToken = notebookProperties.getInternalToken();
     }
 
     private void verifyInternalToken(String token) {

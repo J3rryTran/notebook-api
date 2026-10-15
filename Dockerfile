@@ -1,5 +1,7 @@
 FROM debian:12-slim
 
+LABEL notebook.contract="2"
+
 ENV DEBIAN_FRONTEND=noninteractive
 ENV JAVA_HOME=/usr/bin/jdk-17.0.12
 ENV PATH="${JAVA_HOME}/bin:${PATH}"
@@ -10,23 +12,23 @@ RUN apt-get update && \
 
 COPY --from=trungtmba11093/java_env:java17-v0 /usr/bin/jdk-17.0.12 /usr/bin/jdk-17.0.12
 
-# Tạo user notebook (uid 10001) không quyền root
+# Tạo user notebook (uid 10001, gid 10001) không login
 RUN groupadd -g 10001 notebook && \
-    useradd -u 10001 -g notebook -m -s /bin/bash notebook
+    useradd -u 10001 -g 10001 -M -s /usr/sbin/nologin notebook
 
 WORKDIR /app
 
-COPY backend/nb-notebook-service/target/nb-notebook-service-*.jar /app/nb-notebook-service.jar
-COPY backend/nb-execution-service/target/nb-execution-service-*.jar /app/nb-execution-service.jar
+ARG VERSION=0.1.0-SNAPSHOT
+COPY backend/nb-notebook-service/target/nb-notebook-service-${VERSION}.jar /app/nb-notebook-service.jar
+COPY backend/nb-execution-service/target/nb-execution-service-${VERSION}.jar /app/nb-execution-service.jar
 
 COPY frontend/public/ /usr/share/nginx/html/
 COPY docker/nginx.conf /etc/nginx/nginx.conf
 COPY docker/entrypoint.sh /app/entrypoint.sh
-COPY docker/health-probe.sh /app/health-probe.sh
+COPY docker/healthcheck.sh /app/healthcheck.sh
 
-RUN chmod +x /app/entrypoint.sh /app/health-probe.sh && \
-    chown -R notebook:notebook /app /usr/share/nginx/html && \
-    chown -R notebook:notebook /var/log/nginx /var/lib/nginx
+RUN chmod 0755 /app/entrypoint.sh /app/healthcheck.sh && \
+    chown -R 10001:10001 /app /usr/share/nginx/html
 
 USER 10001
 

@@ -8,7 +8,6 @@ import com.vtnexus.notebook.store.model.NotebookAuthSession;
 import com.vtnexus.notebook.store.repository.NotebookAuthSessionRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -43,16 +42,16 @@ public class AuthSessionService {
             NotebookAuthSessionRepository sessionRepository,
             AuthProperties authProperties,
             LdapAuthenticator ldapAuthenticator,
-            @Value("${notebook.encryptionKey:}") String encryptionKey,
-            @Value("${kyuubi.rest-url:http://localhost:10099}") String kyuubiRestUrl,
-            @Value("${notebook.admins:}") List<String> admins) {
+            com.vtnexus.notebook.common.config.NotebookProperties notebookProperties,
+            com.vtnexus.notebook.common.config.KyuubiProperties kyuubiProperties) {
         this.sessionRepository = sessionRepository;
         this.authProperties = authProperties;
         this.ldapAuthenticator = ldapAuthenticator;
-        this.kyuubiRestUrl = kyuubiRestUrl.replaceAll("/+$", "");
-        this.admins = (admins != null) ? admins : List.of();
-        this.credentialCrypto = (encryptionKey != null && !encryptionKey.isBlank())
-                ? new CredentialCrypto(encryptionKey)
+        this.kyuubiRestUrl = kyuubiProperties.getRestUrl().replaceAll("/+$", "");
+        this.admins = (notebookProperties.getAdmins() != null) ? notebookProperties.getAdmins() : List.of();
+        String encKey = notebookProperties.getEncryptionKey();
+        this.credentialCrypto = (encKey != null && !encKey.isBlank())
+                ? new CredentialCrypto(encKey)
                 : null;
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(5))

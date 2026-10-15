@@ -4,7 +4,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.vtnexus.notebook.common.auth.*;
 import com.vtnexus.notebook.execution.client.InternalSessionClient;
 import jakarta.servlet.Filter;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -28,12 +27,12 @@ public class SecurityConfig {
             BearerDelegationAuthenticator bearerAuthenticator,
             InternalSessionClient internalSessionClient,
             ObjectMapper objectMapper,
-            @Value("${notebook.internalToken:${notebook.internal-token:}}") String internalToken) {
+            com.vtnexus.notebook.common.config.NotebookProperties notebookProperties) {
         this.authProperties = authProperties;
         this.bearerAuthenticator = bearerAuthenticator;
         this.internalSessionClient = internalSessionClient;
         this.objectMapper = objectMapper;
-        this.internalToken = internalToken;
+        this.internalToken = notebookProperties.getInternalToken();
     }
 
     @Bean

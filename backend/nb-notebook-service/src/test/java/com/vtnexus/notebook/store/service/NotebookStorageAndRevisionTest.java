@@ -42,15 +42,17 @@ class NotebookStorageAndRevisionTest {
         revisionRepository = mock(NotebookRevisionRepository.class);
         entityManager = mock(EntityManager.class);
         objectMapper = new ObjectMapper();
+        com.vtnexus.notebook.common.config.NotebookProperties properties = new com.vtnexus.notebook.common.config.NotebookProperties();
+        properties.getMax().setCells(500);
+        properties.getMax().setPageSize(200);
+        properties.getRevision().setMaxPerNotebook(100);
         notebookService = new NotebookService(
                 notebookRepository,
                 permissionRepository,
                 revisionRepository,
                 objectMapper,
                 entityManager,
-                500,
-                200,
-                100 // maxRevisions
+                properties
         );
     }
 

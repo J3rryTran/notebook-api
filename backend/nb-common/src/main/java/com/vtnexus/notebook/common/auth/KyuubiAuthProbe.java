@@ -2,7 +2,6 @@ package com.vtnexus.notebook.common.auth;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.stereotype.Component;
@@ -35,9 +34,9 @@ public class KyuubiAuthProbe implements ApplicationRunner {
 
     public KyuubiAuthProbe(
             AuthProperties authProperties,
-            @Value("${kyuubi.rest-url:http://localhost:10099}") String kyuubiRestUrl) {
+            com.vtnexus.notebook.common.config.KyuubiProperties kyuubiProperties) {
         this.authProperties = authProperties;
-        this.kyuubiRestUrl = kyuubiRestUrl.replaceAll("/+$", "");
+        this.kyuubiRestUrl = kyuubiProperties.getRestUrl().replaceAll("/+$", "");
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(5))
                 .build();

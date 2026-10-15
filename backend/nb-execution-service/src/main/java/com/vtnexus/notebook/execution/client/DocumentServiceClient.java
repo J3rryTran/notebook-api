@@ -2,7 +2,6 @@ package com.vtnexus.notebook.execution.client;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.vtnexus.notebook.common.exception.NotebookApiException;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.web.client.RestTemplateBuilder;
 import org.springframework.http.*;
 import org.springframework.stereotype.Component;
@@ -18,11 +17,11 @@ public class DocumentServiceClient {
     private final String internalToken;
 
     public DocumentServiceClient(
-            @Value("${notebook.notebook-service-url:${notebook.document-service-url:http://localhost:8080}}") String documentServiceUrl,
-            @Value("${notebook.internal-token:${notebook.internalToken:dev-internal-secret-token}}") String internalToken,
+            com.vtnexus.notebook.common.config.NotebookProperties notebookProperties,
             RestTemplateBuilder builder) {
-        this.documentServiceUrl = documentServiceUrl.endsWith("/") ? documentServiceUrl.substring(0, documentServiceUrl.length() - 1) : documentServiceUrl;
-        this.internalToken = internalToken;
+        String url = notebookProperties.getNotebookServiceUrl();
+        this.documentServiceUrl = url.endsWith("/") ? url.substring(0, url.length() - 1) : url;
+        this.internalToken = notebookProperties.getInternalToken();
         this.restTemplate = builder
                 .setConnectTimeout(Duration.ofSeconds(5))
                 .setReadTimeout(Duration.ofSeconds(10))

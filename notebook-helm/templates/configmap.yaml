@@ -1,0 +1,92 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "notebook.fullname" . }}-config
+  labels:
+    {{- include "notebook.labels" . | nindent 4 }}
+data:
+  application.yaml: |
+    spring:
+      datasource:
+        url: jdbc:mariadb://{{ .Values.mariadb.host }}:{{ .Values.mariadb.port }}/{{ .Values.mariadb.database }}?{{ .Values.mariadb.params }}
+        username: {{ .Values.mariadb.username | quote }}
+        hikari:
+          maximum-pool-size: {{ .Values.mariadb.maxPoolSize }}
+    server:
+      forward-headers-strategy: native
+    logging:
+      level:
+        root: {{ .Values.logLevel }}
+    notebook:
+      public-url: {{ .Values.publicUrl | quote }}
+      admins: {{ toJson .Values.auth.admins }}
+      auth:
+        mode: {{ .Values.auth.mode }}
+        allow-unverified: {{ .Values.auth.allowUnverified }}
+        {{- if eq .Values.auth.mode "oidc" }}
+        username-claim: {{ .Values.auth.oidc.usernameClaim | quote }}
+        cache-ttl: {{ .Values.auth.oidc.cacheTtl }}
+        oidc:
+          issuer: {{ .Values.auth.oidc.issuer | quote }}
+          client-id: {{ .Values.auth.oidc.clientId | quote }}
+          scopes: {{ toJson .Values.auth.oidc.scopes }}
+          {{- if .Values.auth.oidc.serviceAccount.enabled }}
+          service-client-id: {{ .Values.auth.oidc.serviceAccount.clientId | quote }}
+          {{- end }}
+        {{- else }}
+        session-ttl: {{ .Values.auth.session.ttl }}
+        recheck: {{ .Values.auth.session.recheck }}
+        {{- if eq .Values.auth.mode "ldap" }}
+        ldap:
+          url: {{ .Values.auth.ldap.url | quote }}
+          start-tls: {{ .Values.auth.ldap.startTls }}
+          base-dn: {{ .Values.auth.ldap.baseDn | quote }}
+          {{- if .Values.auth.ldap.userDnPattern }}
+          user-dn-pattern: {{ .Values.auth.ldap.userDnPattern | quote }}
+          {{- end }}
+          {{- if .Values.auth.ldap.userSearchFilter }}
+          user-search-base: {{ .Values.auth.ldap.userSearchBase | quote }}
+          user-search-filter: {{ .Values.auth.ldap.userSearchFilter | quote }}
+          username-attribute: {{ .Values.auth.ldap.usernameAttribute | quote }}
+          manager-dn: {{ .Values.auth.ldap.managerDn | quote }}
+          {{- end }}
+          group-search-base: {{ .Values.auth.ldap.groupSearchBase | quote }}
+          group-member-attribute: {{ .Values.auth.ldap.groupMemberAttribute | quote }}
+          admin-group: {{ .Values.auth.ldap.adminGroup | quote }}
+          connect-timeout: {{ .Values.auth.ldap.connectTimeout }}
+          read-timeout: {{ .Values.auth.ldap.readTimeout }}
+          {{- if .Values.auth.ldap.trustStore.enabled }}
+          trust-store: "/etc/notebook/ldap/truststore"
+          trust-store-type: {{ .Values.auth.ldap.trustStore.type | quote }}
+          {{- end }}
+        {{- end }}
+        {{- end }}
+      max:
+        cells: {{ .Values.notebook.maxCells }}
+        page-size: 200
+      cell:
+        source:
+          max-size: {{ include "notebook.bytes" .Values.notebook.cellSourceMaxSize }}
+      document:
+        max-size: {{ include "notebook.bytes" .Values.notebook.documentMaxSize }}
+      import:
+        max-size: {{ include "notebook.bytes" .Values.notebook.importMaxSize }}
+      revision:
+        max-per-notebook: {{ .Values.notebook.maxRevisions }}
+      results:
+        max-rows: {{ .Values.notebook.resultsMaxRows }}
+      events:
+        pool-size: {{ .Values.notebook.eventsPoolSize }}
+        max-wait: {{ .Values.notebook.eventsMaxWait }}
+    kyuubi:
+      rest-url: {{ .Values.kyuubi.restUrl | quote }}
+      connect-timeout: {{ .Values.kyuubi.connectTimeout }}
+      request-timeout: {{ .Values.kyuubi.requestTimeout }}
+      session-open-timeout: {{ .Values.kyuubi.sessionOpenTimeout }}
+      idle-session-timeout: {{ .Values.kyuubi.idleSessionTimeout }}
+      pin-to-instance: {{ .Values.kyuubi.pinToInstance }}
+      allowed-session-config-keys: {{ toJson .Values.kyuubi.allowedSessionConfigKeys }}
+      {{- if .Values.kyuubi.extraSessionConfigs }}
+      session-configs:
+        {{- toYaml .Values.kyuubi.extraSessionConfigs | nindent 8 }}
+      {{- end }}

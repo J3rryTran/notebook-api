@@ -5,7 +5,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.vtnexus.notebook.common.exception.NotebookApiException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.web.client.RestTemplateBuilder;
 import org.springframework.http.*;
 import org.springframework.stereotype.Component;
@@ -39,18 +38,23 @@ public class KyuubiRestClient {
     private final List<String> allowedSessionConfigKeys;
 
     public KyuubiRestClient(
-            @Value("${kyuubi.rest-url:http://localhost:10099}") String defaultBaseUrl,
-            @Value("${kyuubi.pin-to-instance:true}") boolean pinToInstance,
-            @Value("${kyuubi.allowed-session-config-keys:spark.executor.memory,spark.executor.cores,spark.sql.shuffle.partitions}") List<String> allowedSessionConfigKeys,
+            com.vtnexus.notebook.common.config.KyuubiProperties kyuubiProperties,
             RestTemplateBuilder builder,
             ObjectMapper objectMapper) {
-        this.defaultBaseUrl = defaultBaseUrl.endsWith("/") ? defaultBaseUrl.substring(0, defaultBaseUrl.length() - 1) : defaultBaseUrl;
-        this.pinToInstance = pinToInstance;
-        this.allowedSessionConfigKeys = allowedSessionConfigKeys;
-        this.defaultSessionConfigs = Map.of("kyuubi.session.engine.launch.async", "true");
+        String baseUrl = kyuubiProperties.getRestUrl();
+        this.defaultBaseUrl = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
+        this.pinToInstance = kyuubiProperties.isPinToInstance();
+        this.allowedSessionConfigKeys = kyuubiProperties.getAllowedSessionConfigKeys() != null
+                ? kyuubiProperties.getAllowedSessionConfigKeys()
+                : List.of("spark.executor.memory", "spark.executor.cores", "spark.sql.shuffle.partitions");
+        this.defaultSessionConfigs = (kyuubiProperties.getSessionConfigs() != null && !kyuubiProperties.getSessionConfigs().isEmpty())
+                ? new HashMap<>(kyuubiProperties.getSessionConfigs())
+                : Map.of("kyuubi.session.engine.launch.async", "true");
+        Duration connectTimeout = kyuubiProperties.getConnectTimeout() != null ? kyuubiProperties.getConnectTimeout() : Duration.ofSeconds(10);
+        Duration requestTimeout = kyuubiProperties.getRequestTimeout() != null ? kyuubiProperties.getRequestTimeout() : Duration.ofSeconds(60);
         this.restTemplate = builder
-                .setConnectTimeout(Duration.ofSeconds(10))
-                .setReadTimeout(Duration.ofSeconds(60))
+                .setConnectTimeout(connectTimeout)
+                .setReadTimeout(requestTimeout)
                 .build();
         this.objectMapper = objectMapper;
     }

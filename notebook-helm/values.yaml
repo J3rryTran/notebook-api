@@ -1,82 +1,148 @@
-replicaCount: 2
+# ---- Bắt buộc phải điền (đánh dấu REQUIRED); thiếu thì render lỗi ----
+
+topology: allInOne            # allInOne (vòng này) | split (chưa hỗ trợ, render lỗi)
 
 image:
   repository: docker.io/j3rrytran/notebook
-  tag: ""
+  tag: ""                     # rỗng = .Chart.AppVersion
   pullPolicy: IfNotPresent
+  pullSecrets: []             # [{name: regcred}]
 
+replicaCount: 2
+
+existingSecret: notebook-secrets   # REQUIRED. Key xem mục 4
+
+# ---- Truy cập ----
 service:
-  type: NodePort
+  type: NodePort              # NodePort | ClusterIP
   port: 8080
-  nodePort: 32380
+  nodePort: 32380             # chỉ dùng khi NodePort; rỗng = để K8s tự chọn
+  externalTrafficPolicy: Cluster
+  annotations: {}
 
 ingress:
   enabled: false
   className: nginx
-  host: notebook.example.local
-  tls: []
+  host: ""                    # REQUIRED khi enabled
+  tls: []                     # [{secretName: notebook-tls, hosts: [...]}]
+  annotations: {}
 
+publicUrl: ""                 # REQUIRED. URL người dùng mở, vd http://10.29.19.56:32380
+                              # dùng cho redirect OIDC và cờ cookie Secure (https:// → Secure)
+
+# ---- Lưu trữ ----
+mariadb:
+  host: ""                    # REQUIRED, vd 10.29.19.52
+  port: 3306
+  database: test
+  username: notebook_api
+  params: "useUnicode=true&characterEncoding=utf8&connectionTimeZone=UTC"
+  maxPoolSize: 10             # mỗi JVM
+
+# ---- Kyuubi ----
 kyuubi:
-  restUrl: http://kyuubi-rest.kyuubi.svc.cluster.local:10099
+  restUrl: ""                 # REQUIRED, vd http://kyuubi-rest.kyuubi.svc.cluster.local:10099
   connectTimeout: 10s
   requestTimeout: 60s
   sessionOpenTimeout: 10m
+  idleSessionTimeout: 30m
+  pinToInstance: true
   allowedSessionConfigKeys:
     - spark.executor.memory
     - spark.executor.cores
     - spark.sql.shuffle.partitions
-  idleSessionTimeout: 30m
+  # KHÔNG có sessionConfigs.kyuubi.engine.spark.output.mode: giữ AUTO (plan Q7). Render lỗi nếu có.
+  extraSessionConfigs: {}
 
+# ---- Xác thực ----
 auth:
-  mode: oidc # oidc | no-oidc | ldap
-  usernameClaim: preferred_username
-  cacheTtl: 60s
-  sessionTtl: 8h
-  recheck: 10m
-  allowUnverified: false
-  oidc:
-    issuer: https://10.29.19.56:32004/realms/lakehouse
-    clientId: kyuubi-notebook
-    redirectPath: /auth/callback
+  mode: oidc                  # REQUIRED: oidc | no-oidc | ldap
+  admins: []                  # username được coi là admin
+  allowUnverified: false      # chỉ playground khi Kyuubi authentication=NONE
+
+  oidc:                       # dùng khi mode=oidc
+    issuer: ""                # REQUIRED khi oidc, phải khớp issuer bên Kyuubi
+    clientId: kyuubi-notebook # client public cho SPA (PKCE)
     scopes: [openid, profile]
-    serviceClientId: notebook-api
-  ldap:
-    url: ldaps://ldap.lakehouse.local:636
+    usernameClaim: preferred_username
+    cacheTtl: 60s
+    serviceAccount:           # proxy user khi username ≠ ranger_username (plan §2.2 bước 4b)
+      enabled: false          # bật sau khi P5.7 đạt
+      clientId: notebook-api  # client confidential; secret ở key oidc-client-secret
+
+  session:                    # dùng khi mode=no-oidc | ldap
+    ttl: 8h
+    recheck: 10m
+
+  ldap:                       # dùng khi mode=ldap
+    url: ""                   # REQUIRED khi ldap
     startTls: false
-    trustStore: ""
-    trustAll: false
-    baseDn: dc=lakehouse,dc=local
-    userDnPattern: ""
+    baseDn: ""
+    userDnPattern: ""         # đúng MỘT trong userDnPattern / userSearchFilter
     userSearchBase: ou=people
-    userSearchFilter: (uid={0})
+    userSearchFilter: ""
     usernameAttribute: uid
-    managerDn: ""
+    managerDn: ""             # bắt buộc khi dùng userSearchFilter; password ở key ldap-manager-password
     groupSearchBase: ou=groups
     groupMemberAttribute: member
     adminGroup: ""
     connectTimeout: 5s
     readTimeout: 10s
+    trustStore:
+      enabled: false          # true → mount key ldap-truststore của existingSecret
+      type: PKCS12            # PKCS12 | JKS | PEM
 
+# ---- Giới hạn ứng dụng ----
+notebook:
+  maxCells: 500
+  cellSourceMaxSize: 1Mi
+  documentMaxSize: 16Mi
+  importMaxSize: 16Mi
+  maxRevisions: 100
+  resultsMaxRows: 1000
+  eventsPoolSize: 16
+  eventsMaxWait: 10s
 
-mariadb:
-  host: 10.29.19.52
-  port: 3306
-  database: test
-  username: notebook_api
-  existingSecret: notebook-secrets
-  passwordKey: db-password
-
-secrets:
-  existingSecret: notebook-secrets
-  internalTokenKey: internal-token
-  authEncryptionKey: auth-encryption-key
-  oidcClientSecretKey: oidc-client-secret
-  ldapManagerPasswordKey: ldap-manager-password
+# ---- Runtime ----
+jvm:
+  notebookService: "-XX:MaxRAMPercentage=35 -XX:+ExitOnOutOfMemoryError"
+  executionService: "-XX:MaxRAMPercentage=35 -XX:+ExitOnOutOfMemoryError"
+  # 2 JVM chung 1 container: tổng ≈ 70% limit, phần còn lại cho nginx + metaspace
 
 resources:
-  requests:
-    cpu: 250m
-    memory: 512Mi
-  limits:
-    cpu: 1000m
-    memory: 1Gi
+  requests: { cpu: 500m, memory: 1Gi }
+  limits:   { cpu: "2",  memory: 2Gi }
+
+logLevel: INFO                # root logger cả 2 JVM
+extraEnv: []                  # [{name: X, value: Y}] cho trường hợp đặc biệt
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  runAsGroup: 10001
+  fsGroup: 10001
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities: { drop: [ALL] }
+
+nodeSelector: {}
+tolerations: []
+affinity: {}                  # rỗng → chart tự thêm podAntiAffinity "preferred" theo hostname
+topologySpreadConstraints: []
+podAnnotations: {}
+podLabels: {}
+
+podDisruptionBudget:
+  enabled: true               # chỉ render khi replicaCount > 1
+  minAvailable: 1
+
+networkPolicy:
+  enabled: false
+  ingressFrom: []             # [{namespaceSelector: …}] nguồn được vào cổng 8080; rỗng = mọi nơi
+  egress:                     # chỉ áp khi enabled
+    mariadb: { cidr: 10.29.19.52/32, port: 3306 }
+    kyuubi:  { namespace: kyuubi, podLabels: { app.kubernetes.io/name: kyuubi }, port: 10099 }
+    keycloak: { cidr: 10.29.19.56/32, port: 32004 }
+    ldap: { cidr: "", port: 636 }
+    dns: true

@@ -1,6 +1,5 @@
 package com.vtnexus.notebook.execution.config;
 
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.task.AsyncTaskExecutor;
@@ -11,7 +10,8 @@ import org.springframework.security.task.DelegatingSecurityContextAsyncTaskExecu
 public class ExecutionAsyncConfig {
 
     @Bean(name = "eventsTaskExecutor")
-    public AsyncTaskExecutor eventsTaskExecutor(@Value("${notebook.events.poolSize:16}") int poolSize) {
+    public AsyncTaskExecutor eventsTaskExecutor(com.vtnexus.notebook.common.config.NotebookProperties notebookProperties) {
+        int poolSize = notebookProperties.getEvents().getPoolSize();
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
         executor.setCorePoolSize(poolSize);
         executor.setMaxPoolSize(poolSize * 2);

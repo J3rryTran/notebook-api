@@ -6,7 +6,6 @@ import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import com.vtnexus.notebook.common.auth.SessionInfo;
 import com.vtnexus.notebook.common.auth.SessionResolver;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.net.URI;
@@ -26,11 +25,10 @@ public class InternalSessionClient implements SessionResolver {
     private final Cache<String, SessionInfo> sessionCache;
 
     public InternalSessionClient(
-            @Value("${notebook.notebook-service-url:http://localhost:8080}") String notebookServiceUrl,
-            @Value("${notebook.internalToken:${notebook.internal-token}}") String internalToken,
+            com.vtnexus.notebook.common.config.NotebookProperties notebookProperties,
             ObjectMapper objectMapper) {
-        this.notebookServiceUrl = notebookServiceUrl.replaceAll("/+$", "");
-        this.internalToken = internalToken;
+        this.notebookServiceUrl = notebookProperties.getNotebookServiceUrl().replaceAll("/+$", "");
+        this.internalToken = notebookProperties.getInternalToken();
         this.objectMapper = objectMapper;
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(5))

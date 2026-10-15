@@ -1,6 +1,5 @@
 package com.vtnexus.notebook.store.controller;
 
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -19,8 +18,8 @@ public class MeController {
 
     private final List<String> admins;
 
-    public MeController(@Value("${notebook.admins:}") List<String> admins) {
-        this.admins = admins != null ? admins : List.of();
+    public MeController(com.vtnexus.notebook.common.config.NotebookProperties notebookProperties) {
+        this.admins = notebookProperties.getAdmins() != null ? notebookProperties.getAdmins() : List.of();
     }
 
     @GetMapping("/me")

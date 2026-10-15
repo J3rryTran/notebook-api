@@ -4,7 +4,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.vtnexus.notebook.common.exception.NotebookApiException;
 import com.vtnexus.notebook.store.model.*;
 import com.vtnexus.notebook.store.repository.*;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -26,6 +25,8 @@ public class NotebookService {
     private final int maxCells;
     private final int maxPageSize;
     private final int maxRevisions;
+    private final int maxDocumentSize;
+    private final int maxCellSourceSize;
 
     public NotebookService(
             NotebookRepository notebookRepository,
@@ -33,17 +34,17 @@ public class NotebookService {
             NotebookRevisionRepository revisionRepository,
             ObjectMapper objectMapper,
             jakarta.persistence.EntityManager entityManager,
-            @Value("${notebook.max.cells:500}") int maxCells,
-            @Value("${notebook.max.page-size:200}") int maxPageSize,
-            @Value("${notebook.revision.max-per-notebook:100}") int maxRevisions) {
+            com.vtnexus.notebook.common.config.NotebookProperties notebookProperties) {
         this.notebookRepository = notebookRepository;
         this.permissionRepository = permissionRepository;
         this.revisionRepository = revisionRepository;
         this.objectMapper = objectMapper;
         this.entityManager = entityManager;
-        this.maxCells = maxCells;
-        this.maxPageSize = maxPageSize;
-        this.maxRevisions = maxRevisions;
+        this.maxCells = notebookProperties.getMax().getCells();
+        this.maxPageSize = notebookProperties.getMax().getPageSize();
+        this.maxRevisions = notebookProperties.getRevision().getMaxPerNotebook();
+        this.maxDocumentSize = notebookProperties.getDocument().getMaxSize();
+        this.maxCellSourceSize = notebookProperties.getCell().getSource().getMaxSize();
     }
 
     public NotebookRepository getNotebookRepository() {
@@ -112,8 +113,8 @@ public class NotebookService {
                 String language = (String) cellData.getOrDefault("language", "SQL");
                 String source = (String) cellData.getOrDefault("source", "");
 
-                if (source != null && source.getBytes(java.nio.charset.StandardCharsets.UTF_8).length > 1048576) {
-                    throw new NotebookApiException("PAYLOAD_TOO_LARGE", "Cell source size exceeds limit of 1048576 bytes", HttpStatus.PAYLOAD_TOO_LARGE);
+                if (source != null && source.getBytes(java.nio.charset.StandardCharsets.UTF_8).length > maxCellSourceSize) {
+                    throw new NotebookApiException("PAYLOAD_TOO_LARGE", "Cell source size exceeds limit of " + maxCellSourceSize + " bytes", HttpStatus.PAYLOAD_TOO_LARGE);
                 }
 
                 NotebookDocument.CellItem item = NotebookDocument.CellItem.builder()
@@ -364,8 +365,8 @@ public class NotebookService {
     }
 
     private void validateDocumentSize(String documentJson) {
-        if (documentJson != null && documentJson.getBytes(java.nio.charset.StandardCharsets.UTF_8).length > 16 * 1024 * 1024) {
-            throw new NotebookApiException("PAYLOAD_TOO_LARGE", "Notebook document size exceeds 16 MB limit", HttpStatus.PAYLOAD_TOO_LARGE);
+        if (documentJson != null && documentJson.getBytes(java.nio.charset.StandardCharsets.UTF_8).length > maxDocumentSize) {
+            throw new NotebookApiException("PAYLOAD_TOO_LARGE", "Notebook document size exceeds " + maxDocumentSize + " bytes limit", HttpStatus.PAYLOAD_TOO_LARGE);
         }
     }
 

@@ -5,7 +5,6 @@ import com.vtnexus.notebook.common.auth.AuthProperties;
 import com.vtnexus.notebook.common.auth.SessionInfo;
 import com.vtnexus.notebook.common.exception.NotebookApiException;
 import com.vtnexus.notebook.store.service.AuthSessionService;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -23,10 +22,10 @@ public class InternalAuthController {
     public InternalAuthController(
             AuthProperties authProperties,
             AuthSessionService sessionService,
-            @Value("${notebook.internalToken:${notebook.internal-token}}") String internalToken) {
+            com.vtnexus.notebook.common.config.NotebookProperties notebookProperties) {
         this.authProperties = authProperties;
         this.sessionService = sessionService;
-        this.internalToken = internalToken;
+        this.internalToken = notebookProperties.getInternalToken();
     }
 
     private void verifyInternalToken(String token) {

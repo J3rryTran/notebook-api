@@ -4,7 +4,6 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.vtnexus.notebook.common.exception.NotebookApiException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.web.client.RestTemplateBuilder;
 import org.springframework.http.*;
 import org.springframework.stereotype.Component;
@@ -29,13 +28,12 @@ public class ServiceAccountTokenProvider {
     private Instant tokenExpiry = Instant.MIN;
 
     public ServiceAccountTokenProvider(
-            @Value("${notebook.auth.oidc.issuer:}") String issuer,
-            @Value("${notebook.auth.oidc.serviceClientId:notebook-api}") String clientId,
-            @Value("${notebook.auth.oidc.serviceClientSecret:${NOTEBOOK_OIDC_CLIENT_SECRET:}}") String clientSecret,
+            com.vtnexus.notebook.common.auth.AuthProperties authProperties,
             RestTemplateBuilder builder) {
-        this.issuer = issuer.endsWith("/") ? issuer.substring(0, issuer.length() - 1) : issuer;
-        this.clientId = clientId;
-        this.clientSecret = clientSecret;
+        String iss = authProperties.getOidc().getIssuer();
+        this.issuer = (iss != null && iss.endsWith("/")) ? iss.substring(0, iss.length() - 1) : (iss != null ? iss : "");
+        this.clientId = authProperties.getOidc().getServiceClientId();
+        this.clientSecret = authProperties.getOidc().getServiceClientSecret();
         this.restTemplate = builder
                 .setConnectTimeout(Duration.ofSeconds(5))
                 .setReadTimeout(Duration.ofSeconds(10))

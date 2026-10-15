@@ -9,11 +9,25 @@ management:
     web:
       exposure:
         include: health,info
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      group:
+        readiness:
+          include: readinessState,db
+        liveness:
+          include: livenessState
 
 spring:
   application:
     name: nb-notebook-service
+
+logging:
+  level:
+    root: INFO
   datasource:
+    password: ${SPRING_DATASOURCE_PASSWORD:}
     hikari:
       maximum-pool-size: 10
   flyway:
@@ -30,47 +44,54 @@ spring:
           time_zone: UTC
 
 notebook:
+  public-url: ""
+  internal-token: ${NOTEBOOK_INTERNAL_TOKEN}
+  encryption-key: ${NOTEBOOK_AUTH_ENCRYPTION_KEY:}
+  admins: []
   auth:
     mode: oidc
-    usernameClaim: preferred_username
-    cacheTtl: 60s
-    sessionTtl: 8h
+    username-claim: preferred_username
+    cache-ttl: 60s
+    session-ttl: 8h
     recheck: 10m
-    allowUnverified: false
+    allow-unverified: false
     oidc:
-      issuer: https://10.29.19.56:32004/realms/lakehouse
-      clientId: kyuubi-notebook
+      issuer: ""
+      client-id: kyuubi-notebook
       scopes: [openid, profile]
+      service-client-id: notebook-api
+      service-client-secret: ${NOTEBOOK_OIDC_CLIENT_SECRET:}
     ldap:
       url: ""
-      startTls: false
-      trustStore: ""
-      trustAll: false
-      baseDn: ""
-      userDnPattern: ""
-      userSearchBase: ou=people
-      userSearchFilter: (uid={0})
-      usernameAttribute: uid
-      managerDn: ""
-      managerPassword: ${NOTEBOOK_LDAP_MANAGER_PASSWORD:}
-      groupSearchBase: ou=groups
-      groupMemberAttribute: member
-      adminGroup: ""
-      connectTimeout: 5s
-      readTimeout: 10s
-  encryptionKey: ${NOTEBOOK_AUTH_ENCRYPTION_KEY:}
-  internalToken: ${NOTEBOOK_INTERNAL_TOKEN}
-  admins: []
+      start-tls: false
+      trust-store: ""
+      trust-store-password: ${NOTEBOOK_LDAP_TRUSTSTORE_PASSWORD:}
+      trust-store-type: PKCS12
+      trust-all: false
+      base-dn: ""
+      user-dn-pattern: ""
+      user-search-base: ou=people
+      user-search-filter: (uid={0})
+      username-attribute: uid
+      manager-dn: ""
+      manager-password: ${NOTEBOOK_LDAP_MANAGER_PASSWORD:}
+      group-search-base: ou=groups
+      group-member-attribute: member
+      admin-group: ""
+      connect-timeout: 5s
+      read-timeout: 10s
   cell:
     source:
       max-size: 1048576
   max:
     cells: 500
     page-size: 200
+  document:
+    max-size: 16777216
   revision:
     max-per-notebook: 100
   import:
     max-size: 16777216
 
 kyuubi:
-  rest-url: http://localhost:10099
+  rest-url: ""

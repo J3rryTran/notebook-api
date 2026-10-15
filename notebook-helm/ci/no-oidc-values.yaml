@@ -1,0 +1,23 @@
+topology: allInOne
+existingSecret: notebook-secrets
+publicUrl: "http://10.29.19.56:32380"
+
+service:
+  type: NodePort
+  port: 8080
+  nodePort: 32380
+
+mariadb:
+  host: "10.29.19.52"
+  port: 3306
+  database: test
+  username: notebook_api
+
+kyuubi:
+  restUrl: "http://kyuubi-rest.kyuubi.svc.cluster.local:10099"
+
+auth:
+  mode: no-oidc
+  session:
+    ttl: 8h
+    recheck: 10m

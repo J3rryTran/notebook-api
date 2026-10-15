@@ -14,9 +14,11 @@ import java.util.Map;
 public class AuthConfigController {
 
     private final AuthProperties authProperties;
+    private final com.vtnexus.notebook.common.config.NotebookProperties notebookProperties;
 
-    public AuthConfigController(AuthProperties authProperties) {
+    public AuthConfigController(AuthProperties authProperties, com.vtnexus.notebook.common.config.NotebookProperties notebookProperties) {
         this.authProperties = authProperties;
+        this.notebookProperties = notebookProperties;
     }
 
     @GetMapping("/config")
@@ -30,7 +32,8 @@ public class AuthConfigController {
             resp.put("issuer", authProperties.getOidc().getIssuer());
             resp.put("clientId", authProperties.getOidc().getClientId());
             resp.put("scopes", authProperties.getOidc().getScopes());
-            resp.put("redirectUri", "/auth/callback");
+            String publicUrl = notebookProperties.getPublicUrl() != null ? notebookProperties.getPublicUrl().replaceAll("/+$", "") : "";
+            resp.put("redirectUri", publicUrl.isEmpty() ? "/auth/callback" : publicUrl + "/auth/callback");
         } else if ("no-oidc".equalsIgnoreCase(mode)) {
             resp.put("verified", authProperties.isEffectiveVerified());
         } else if ("ldap".equalsIgnoreCase(mode)) {

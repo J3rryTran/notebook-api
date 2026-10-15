@@ -1,126 +1,166 @@
+{{- include "notebook.validate" . -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ .Release.Name }}
+  name: {{ include "notebook.fullname" . }}
   labels:
-    app.kubernetes.io/name: {{ .Chart.Name }}
-    app.kubernetes.io/instance: {{ .Release.Name }}
+    {{- include "notebook.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.replicaCount }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
   selector:
     matchLabels:
-      app.kubernetes.io/name: {{ .Chart.Name }}
-      app.kubernetes.io/instance: {{ .Release.Name }}
+      {{- include "notebook.selectorLabels" . | nindent 6 }}
   template:
     metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
       labels:
-        app.kubernetes.io/name: {{ .Chart.Name }}
-        app.kubernetes.io/instance: {{ .Release.Name }}
+        {{- include "notebook.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
     spec:
+      {{- with .Values.image.pullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "notebook.fullname" . }}
       automountServiceAccountToken: false
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      terminationGracePeriodSeconds: 40
       containers:
         - name: notebook
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
           ports:
             - name: http
               containerPort: 8080
               protocol: TCP
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sleep", "5"]
+          startupProbe:
+            exec:
+              command: ["/app/healthcheck.sh", "startup"]
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            exec:
+              command: ["/app/healthcheck.sh", "readiness"]
+            periodSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            exec:
+              command: ["/app/healthcheck.sh", "liveness"]
+            periodSeconds: 10
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
           env:
-            - name: SPRING_PROFILES_ACTIVE
-              value: "prod"
-            - name: NOTEBOOK_AUTH_MODE
-              value: {{ .Values.auth.mode | default "oidc" | quote }}
-            - name: NOTEBOOK_AUTH_USERNAME_CLAIM
-              value: {{ .Values.auth.usernameClaim | default "preferred_username" | quote }}
-            - name: KYUUBI_REST_URL
-              value: {{ .Values.kyuubi.restUrl | quote }}
-            - name: SPRING_DATASOURCE_URL
-              value: "jdbc:mariadb://{{ .Values.mariadb.host }}:{{ .Values.mariadb.port }}/{{ .Values.mariadb.database }}?useUnicode=true&characterEncoding=utf8&connectionTimeZone=UTC"
-            - name: SPRING_DATASOURCE_USERNAME
-              value: {{ .Values.mariadb.username | quote }}
+            - name: NOTEBOOK_CONFIG
+              value: "/etc/notebook/application.yaml"
+            - name: JAVA_OPTS_NOTEBOOK
+              value: {{ .Values.jvm.notebookService | quote }}
+            - name: JAVA_OPTS_EXECUTION
+              value: {{ .Values.jvm.executionService | quote }}
             - name: SPRING_DATASOURCE_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.mariadb.existingSecret }}
-                  key: {{ .Values.mariadb.passwordKey }}
-            - name: NOTEBOOK_INTERNAL_TOKEN
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .Values.secrets.existingSecret }}
-                  key: {{ .Values.secrets.internalTokenKey }}
-            {{- if eq .Values.auth.mode "oidc" }}
-            - name: NOTEBOOK_AUTH_OIDC_ISSUER
-              value: {{ .Values.auth.oidc.issuer | quote }}
-            - name: NOTEBOOK_AUTH_OIDC_CLIENT_ID
-              value: {{ .Values.auth.oidc.clientId | quote }}
-            - name: NOTEBOOK_AUTH_OIDC_SCOPES
-              value: {{ join "," .Values.auth.oidc.scopes | quote }}
-            - name: NOTEBOOK_OIDC_CLIENT_SECRET
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .Values.secrets.existingSecret }}
-                  key: {{ .Values.secrets.oidcClientSecretKey }}
-                  optional: true
-            {{- end }}
-            {{- if ne .Values.auth.mode "oidc" }}
+                  name: {{ .Values.existingSecret }}
+                  key: db-password
+            {{- if or (eq .Values.auth.mode "no-oidc") (eq .Values.auth.mode "ldap") }}
             - name: NOTEBOOK_AUTH_ENCRYPTION_KEY
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.secrets.existingSecret }}
-                  key: {{ .Values.secrets.authEncryptionKey }}
+                  name: {{ .Values.existingSecret }}
+                  key: auth-encryption-key
             {{- end }}
-            {{- if eq .Values.auth.mode "ldap" }}
-            - name: NOTEBOOK_AUTH_LDAP_URL
-              value: {{ .Values.auth.ldap.url | quote }}
-            - name: NOTEBOOK_AUTH_LDAP_START_TLS
-              value: {{ .Values.auth.ldap.startTls | quote }}
-            - name: NOTEBOOK_AUTH_LDAP_TRUST_STORE
-              value: {{ .Values.auth.ldap.trustStore | quote }}
-            - name: NOTEBOOK_AUTH_LDAP_TRUST_ALL
-              value: {{ .Values.auth.ldap.trustAll | quote }}
-            - name: NOTEBOOK_AUTH_LDAP_BASE_DN
-              value: {{ .Values.auth.ldap.baseDn | quote }}
-            - name: NOTEBOOK_AUTH_LDAP_USER_DN_PATTERN
-              value: {{ .Values.auth.ldap.userDnPattern | quote }}
-            - name: NOTEBOOK_AUTH_LDAP_USER_SEARCH_BASE
-              value: {{ .Values.auth.ldap.userSearchBase | quote }}
-            - name: NOTEBOOK_AUTH_LDAP_USER_SEARCH_FILTER
-              value: {{ .Values.auth.ldap.userSearchFilter | quote }}
-            - name: NOTEBOOK_AUTH_LDAP_USERNAME_ATTRIBUTE
-              value: {{ .Values.auth.ldap.usernameAttribute | quote }}
-            - name: NOTEBOOK_AUTH_LDAP_MANAGER_DN
-              value: {{ .Values.auth.ldap.managerDn | quote }}
-            - name: NOTEBOOK_AUTH_LDAP_GROUP_SEARCH_BASE
-              value: {{ .Values.auth.ldap.groupSearchBase | quote }}
-            - name: NOTEBOOK_AUTH_LDAP_GROUP_MEMBER_ATTRIBUTE
-              value: {{ .Values.auth.ldap.groupMemberAttribute | quote }}
-            - name: NOTEBOOK_AUTH_LDAP_ADMIN_GROUP
-              value: {{ .Values.auth.ldap.adminGroup | quote }}
-            - name: NOTEBOOK_AUTH_LDAP_CONNECT_TIMEOUT
-              value: {{ .Values.auth.ldap.connectTimeout | quote }}
-            - name: NOTEBOOK_AUTH_LDAP_READ_TIMEOUT
-              value: {{ .Values.auth.ldap.readTimeout | quote }}
+            {{- if and (eq .Values.auth.mode "oidc") .Values.auth.oidc.serviceAccount.enabled }}
+            - name: NOTEBOOK_OIDC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.existingSecret }}
+                  key: oidc-client-secret
+            {{- end }}
+            {{- if and (eq .Values.auth.mode "ldap") .Values.auth.ldap.userSearchFilter }}
             - name: NOTEBOOK_LDAP_MANAGER_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.secrets.existingSecret }}
-                  key: {{ .Values.secrets.ldapManagerPasswordKey }}
-                  optional: true
+                  name: {{ .Values.existingSecret }}
+                  key: ldap-manager-password
             {{- end }}
-          livenessProbe:
-            exec:
-              command:
-                - /app/health-probe.sh
-                - liveness
-            initialDelaySeconds: 30
-            periodSeconds: 10
-          readinessProbe:
-            exec:
-              command:
-                - /app/health-probe.sh
-                - readiness
-            initialDelaySeconds: 15
-            periodSeconds: 5
-          resources:
-            {{- toYaml .Values.resources | nindent 12 }}
+            {{- if and (eq .Values.auth.mode "ldap") .Values.auth.ldap.trustStore.enabled (ne .Values.auth.ldap.trustStore.type "PEM") }}
+            - name: NOTEBOOK_LDAP_TRUSTSTORE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.existingSecret }}
+                  key: ldap-truststore-password
+            {{- end }}
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/notebook/application.yaml
+              subPath: application.yaml
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+            {{- if and (eq .Values.auth.mode "ldap") .Values.auth.ldap.trustStore.enabled }}
+            - name: ldap-truststore
+              mountPath: /etc/notebook/ldap/truststore
+              subPath: truststore
+              readOnly: true
+            {{- end }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "notebook.fullname" . }}-config
+        - name: tmp
+          emptyDir: {}
+        {{- if and (eq .Values.auth.mode "ldap") .Values.auth.ldap.trustStore.enabled }}
+        - name: ldap-truststore
+          secret:
+            secretName: {{ .Values.existingSecret }}
+            defaultMode: 0440
+            items:
+              - key: ldap-truststore
+                path: truststore
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      affinity:
+        {{- if .Values.affinity }}
+        {{- toYaml .Values.affinity | nindent 8 }}
+        {{- else }}
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    {{- include "notebook.selectorLabels" . | nindent 22 }}
+                topologyKey: kubernetes.io/hostname
+        {{- end }}
+      {{- with .Values.topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

@@ -96,18 +96,10 @@ public class LdapAuthenticator {
         this.sharedLdapTemplate = new LdapTemplate(cs);
     }
 
-    private long parseTimeoutMs(String timeoutStr, long defaultMs) {
-        if (timeoutStr == null || timeoutStr.isBlank()) return defaultMs;
-        try {
-            if (timeoutStr.endsWith("s")) {
-                return Long.parseLong(timeoutStr.substring(0, timeoutStr.length() - 1)) * 1000;
-            } else if (timeoutStr.endsWith("ms")) {
-                return Long.parseLong(timeoutStr.substring(0, timeoutStr.length() - 2));
-            }
-            return Long.parseLong(timeoutStr);
-        } catch (Exception e) {
-            return defaultMs;
-        }
+    private long parseTimeoutMs(Duration duration, long defaultMs) {
+        if (duration == null) return defaultMs;
+        long ms = duration.toMillis();
+        return ms > 0 ? ms : defaultMs;
     }
 
     private void configureTrustAllSsl(Map<String, Object> baseEnv) {

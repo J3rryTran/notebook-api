@@ -1,4 +1,6 @@
-# Plan: Helm chart `notebook-helm` triển khai notebook rời lên Kubernetes
+# [LỖI THỜI - XEM plan/chart-design.md] Plan: Helm chart `notebook-helm` triển khai notebook rời lên Kubernetes
+
+> **LƯU Ý:** Tài liệu này đã lỗi thời và được thay thế hoàn toàn bởi `plan/chart-design.md` và `plan/chart-image-contract.md` (Contract 2). Vui lòng không làm theo cấu hình cũ trong file này.
 
 Trạng thái: chưa thực hiện. Đối tượng thực thi: AI agent hoặc người vận hành.
 Đặc tả tính năng: [`../API-detail.md`](../API-detail.md). Mô tả cho người dùng:

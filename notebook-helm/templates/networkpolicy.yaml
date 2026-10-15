@@ -1,0 +1,71 @@
+{{- if .Values.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "notebook.fullname" . }}
+  labels:
+    {{- include "notebook.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "notebook.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - ports:
+        - protocol: TCP
+          port: 8080
+      {{- if .Values.networkPolicy.ingressFrom }}
+      from:
+        {{- toYaml .Values.networkPolicy.ingressFrom | nindent 8 }}
+      {{- end }}
+  egress:
+    {{- if .Values.networkPolicy.egress.dns }}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    {{- end }}
+    {{- if .Values.networkPolicy.egress.mariadb.cidr }}
+    - to:
+        - ipBlock:
+            cidr: {{ .Values.networkPolicy.egress.mariadb.cidr }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.networkPolicy.egress.mariadb.port }}
+    {{- end }}
+    {{- if .Values.networkPolicy.egress.kyuubi }}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.networkPolicy.egress.kyuubi.namespace }}
+          podSelector:
+            matchLabels:
+              {{- toYaml .Values.networkPolicy.egress.kyuubi.podLabels | nindent 14 }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.networkPolicy.egress.kyuubi.port }}
+    {{- end }}
+    {{- if and (eq .Values.auth.mode "oidc") .Values.networkPolicy.egress.keycloak.cidr }}
+    - to:
+        - ipBlock:
+            cidr: {{ .Values.networkPolicy.egress.keycloak.cidr }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.networkPolicy.egress.keycloak.port }}
+    {{- end }}
+    {{- if and (eq .Values.auth.mode "ldap") .Values.networkPolicy.egress.ldap.cidr }}
+    - to:
+        - ipBlock:
+            cidr: {{ .Values.networkPolicy.egress.ldap.cidr }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.networkPolicy.egress.ldap.port }}
+    {{- end }}
+{{- end }}

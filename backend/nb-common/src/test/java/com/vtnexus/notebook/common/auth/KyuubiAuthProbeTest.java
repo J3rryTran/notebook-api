@@ -29,6 +29,12 @@ class KyuubiAuthProbeTest {
         wireMockServer.stop();
     }
 
+    private com.vtnexus.notebook.common.config.KyuubiProperties kyuubiProps(String url) {
+        com.vtnexus.notebook.common.config.KyuubiProperties p = new com.vtnexus.notebook.common.config.KyuubiProperties();
+        p.setRestUrl(url);
+        return p;
+    }
+
     @Test
     void testProbeKyuubiNoneMode_whenAllowUnverifiedFalse_shouldThrowException() {
         // Kyuubi trả 200 cho ping với Basic ngẫu nhiên
@@ -38,7 +44,7 @@ class KyuubiAuthProbeTest {
         authProperties.setMode("no-oidc");
         authProperties.setAllowUnverified(false);
 
-        KyuubiAuthProbe probe = new KyuubiAuthProbe(authProperties, wireMockServer.baseUrl());
+        KyuubiAuthProbe probe = new KyuubiAuthProbe(authProperties, kyuubiProps(wireMockServer.baseUrl()));
 
         IllegalStateException ex = assertThrows(IllegalStateException.class, probe::probeKyuubi);
         assertTrue(ex.getMessage().contains("Kyuubi accepts unauthenticated ping"));
@@ -52,7 +58,7 @@ class KyuubiAuthProbeTest {
         authProperties.setMode("no-oidc");
         authProperties.setAllowUnverified(true);
 
-        KyuubiAuthProbe probe = new KyuubiAuthProbe(authProperties, wireMockServer.baseUrl());
+        KyuubiAuthProbe probe = new KyuubiAuthProbe(authProperties, kyuubiProps(wireMockServer.baseUrl()));
         assertDoesNotThrow(probe::probeKyuubi);
 
         assertFalse(authProperties.isEffectiveVerified());
@@ -68,7 +74,7 @@ class KyuubiAuthProbeTest {
 
         authProperties.setMode("ldap");
 
-        KyuubiAuthProbe probe = new KyuubiAuthProbe(authProperties, wireMockServer.baseUrl());
+        KyuubiAuthProbe probe = new KyuubiAuthProbe(authProperties, kyuubiProps(wireMockServer.baseUrl()));
 
         IllegalStateException ex = assertThrows(IllegalStateException.class, probe::probeKyuubi);
         assertTrue(ex.getMessage().contains("incompatible with notebook.auth.mode=ldap"));
@@ -82,7 +88,7 @@ class KyuubiAuthProbeTest {
 
         authProperties.setMode("oidc");
 
-        KyuubiAuthProbe probe = new KyuubiAuthProbe(authProperties, "http://localhost:" + unusedPort);
+        KyuubiAuthProbe probe = new KyuubiAuthProbe(authProperties, kyuubiProps("http://localhost:" + unusedPort));
         assertDoesNotThrow(probe::probeKyuubi);
     }
 }

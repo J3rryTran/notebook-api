@@ -70,6 +70,11 @@ class ExecutionServiceAutoOutputTest {
 
         ServiceAccountTokenProvider tokenProvider = Mockito.mock(ServiceAccountTokenProvider.class);
 
+        com.vtnexus.notebook.common.auth.AuthProperties authProps = new com.vtnexus.notebook.common.auth.AuthProperties();
+        authProps.setMode("oidc");
+        com.vtnexus.notebook.common.config.NotebookProperties nbProps = new com.vtnexus.notebook.common.config.NotebookProperties();
+        nbProps.getResults().setMaxRows(1000);
+
         executionService = new ExecutionService(
                 sessionRepository,
                 runRepository,
@@ -80,8 +85,8 @@ class ExecutionServiceAutoOutputTest {
                 objectMapper,
                 txTemplate,
                 tokenProvider,
-                "oidc",
-                1000
+                authProps,
+                nbProps
         );
     }
 
