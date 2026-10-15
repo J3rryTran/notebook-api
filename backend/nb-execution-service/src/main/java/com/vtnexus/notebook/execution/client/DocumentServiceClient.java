@@ -2,6 +2,8 @@ package com.vtnexus.notebook.execution.client;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.vtnexus.notebook.common.exception.NotebookApiException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.boot.web.client.RestTemplateBuilder;
 import org.springframework.http.*;
 import org.springframework.stereotype.Component;
@@ -11,6 +13,8 @@ import java.time.Duration;
 
 @Component
 public class DocumentServiceClient {
+
+    private static final Logger log = LoggerFactory.getLogger(DocumentServiceClient.class);
 
     private final RestTemplate restTemplate;
     private final String documentServiceUrl;
@@ -64,24 +68,30 @@ public class DocumentServiceClient {
                     .maximumSize(10_000)
                     .build();
 
+    /**
+     * Tra {@code app_users.ranger_username} (B4). Lỗi tra cứu thì báo lỗi, không rơi về username và không cache:
+     * rơi về username sẽ cho người dùng chạy sai danh tính trên Ranger.
+     */
     public String getRangerUsername(String user) {
         if (user == null || user.isBlank()) return user;
         return rangerCache.get(user, u -> {
             HttpHeaders headers = new HttpHeaders();
             headers.set("X-Internal-Token", internalToken);
+            ResponseEntity<JsonNode> resp;
             try {
-                ResponseEntity<JsonNode> resp = restTemplate.exchange(
-                        documentServiceUrl + "/internal/users/" + u + "/ranger-username",
-                        HttpMethod.GET, new HttpEntity<>(headers), JsonNode.class);
-                JsonNode body = resp.getBody();
-                if (body != null && body.has("rangerUsername")) {
-                    String r = body.get("rangerUsername").asText();
-                    if (!r.isBlank()) return r;
-                }
+                resp = restTemplate.exchange(
+                        documentServiceUrl + "/internal/users/{username}/ranger-username",
+                        HttpMethod.GET, new HttpEntity<>(headers), JsonNode.class, u);
             } catch (Exception ex) {
-                // Nếu lỗi mạng/timeout trả u để không chặn
+                log.warn("Ranger username lookup failed for {}: {}", u, ex.getMessage());
+                throw new NotebookApiException("RANGER_LOOKUP_FAILED", "Cannot resolve Ranger user", HttpStatus.SERVICE_UNAVAILABLE);
             }
-            return u;
+            JsonNode body = resp.getBody();
+            String r = body != null ? body.path("rangerUsername").asText("") : "";
+            if (r.isBlank()) {
+                throw new NotebookApiException("RANGER_LOOKUP_FAILED", "Cannot resolve Ranger user", HttpStatus.SERVICE_UNAVAILABLE);
+            }
+            return r;
         });
     }
 }

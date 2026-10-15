@@ -48,8 +48,9 @@ public class SecurityConfig {
             case OIDC -> new BearerFilter(bearerAuthenticator, objectMapper);
         };
 
+        CsrfSupport.apply(http, mode);
+
         http
-            .csrf(csrf -> csrf.disable())
             .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/actuator/**", "/internal/**").permitAll()

@@ -25,7 +25,7 @@ class IpynbConversionAndRoundTripTest {
     void setUp() {
         notebookService = Mockito.mock(NotebookService.class);
         com.vtnexus.notebook.common.config.NotebookProperties props = new com.vtnexus.notebook.common.config.NotebookProperties();
-        props.getAnImport().setMaxSize(16777216);
+        props.getImport().setMaxSize(16777216);
         conversionService = new IpynbConversionService(objectMapper, notebookService, props);
     }
 

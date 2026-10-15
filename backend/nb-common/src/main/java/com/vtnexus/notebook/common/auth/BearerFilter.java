@@ -58,26 +58,30 @@ public class BearerFilter extends OncePerRequestFilter {
             return;
         }
 
+        // Chỉ bước xác thực nằm trong try/catch: lỗi của controller phía sau không được đổi thành lỗi xác thực.
+        String username;
         try {
-            String username = authenticator.authenticate(authHeader);
-
-            UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
-                    username,
-                    null,
-                    List.of(new SimpleGrantedAuthority("ROLE_USER"))
-            );
-            SecurityContextHolder.getContext().setAuthentication(authentication);
-            KyuubiCredentialHolder.set(authHeader, username);
-
-            filterChain.doFilter(request, response);
+            username = authenticator.authenticate(authHeader);
         } catch (NotebookApiException ex) {
             writeError(response, ex.getStatus(), ex.getCode(), ex.getMessage());
+            return;
         } catch (Exception ex) {
             String reqId = request.getHeader("X-Request-Id");
             log.warn("Internal authentication error [reqId={}]: {}", reqId, ex.getMessage());
             writeError(response, HttpStatus.INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", "Authentication error");
-        } finally {
+            return;
+        }
 
+        UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
+                username,
+                null,
+                List.of(new SimpleGrantedAuthority("ROLE_USER"))
+        );
+        SecurityContextHolder.getContext().setAuthentication(authentication);
+        KyuubiCredentialHolder.set(authHeader, username);
+        try {
+            filterChain.doFilter(request, response);
+        } finally {
             KyuubiCredentialHolder.clear();
             SecurityContextHolder.clearContext();
         }

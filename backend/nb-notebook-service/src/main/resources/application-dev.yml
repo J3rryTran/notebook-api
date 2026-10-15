@@ -6,6 +6,6 @@ spring:
 
 notebook:
   auth:
-    allowUnverified: true
-  internalToken: dev-internal-token-secret-12345
-  encryptionKey: MTIzNDU2Nzg5MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTI=
+    allow-unverified: true
+  internal-token: dev-internal-token-secret-12345
+  encryption-key: MTIzNDU2Nzg5MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTI=

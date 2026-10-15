@@ -53,36 +53,40 @@ public class SessionCookieFilter extends OncePerRequestFilter {
             return;
         }
 
+        // Chỉ bước tra phiên nằm trong try/catch: lỗi của controller phía sau không được đổi thành 401.
+        SessionInfo info;
         try {
-            SessionInfo info = sessionResolver.resolve(sessionId);
-            if (info == null) {
-                writeError(response, HttpStatus.UNAUTHORIZED, "UNAUTHENTICATED", "Session expired or invalid");
-                return;
-            }
-
-            List<SimpleGrantedAuthority> authorities = new ArrayList<>();
-            authorities.add(new SimpleGrantedAuthority("ROLE_USER"));
-            if (info.isAdmin()) {
-                authorities.add(new SimpleGrantedAuthority("ROLE_ADMIN"));
-            }
-
-            UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
-                    info.username(),
-                    null,
-                    authorities
-            );
-            SecurityContextHolder.getContext().setAuthentication(authentication);
-            KyuubiCredentialHolder.set(info.authorizationHeader(), info.username());
-
-            filterChain.doFilter(request, response);
+            info = sessionResolver.resolve(sessionId);
         } catch (NotebookApiException ex) {
             writeError(response, ex.getStatus(), ex.getCode(), ex.getMessage());
+            return;
         } catch (Exception ex) {
             String reqId = request.getHeader("X-Request-Id");
             log.warn("Session resolution failed [reqId={}]: {}", reqId, ex.getMessage());
             writeError(response, HttpStatus.UNAUTHORIZED, "UNAUTHENTICATED", "Session resolution failed");
-        } finally {
+            return;
+        }
+        if (info == null) {
+            writeError(response, HttpStatus.UNAUTHORIZED, "UNAUTHENTICATED", "Session expired or invalid");
+            return;
+        }
 
+        List<SimpleGrantedAuthority> authorities = new ArrayList<>();
+        authorities.add(new SimpleGrantedAuthority("ROLE_USER"));
+        if (info.isAdmin()) {
+            authorities.add(new SimpleGrantedAuthority("ROLE_ADMIN"));
+        }
+
+        UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
+                info.username(),
+                null,
+                authorities
+        );
+        SecurityContextHolder.getContext().setAuthentication(authentication);
+        KyuubiCredentialHolder.set(info.authorizationHeader(), info.username());
+        try {
+            filterChain.doFilter(request, response);
+        } finally {
             KyuubiCredentialHolder.clear();
             SecurityContextHolder.clearContext();
         }

@@ -10,8 +10,8 @@ spec:
   strategy:
     type: RollingUpdate
     rollingUpdate:
-      maxUnavailable: 0
-      maxSurge: 1
+      maxUnavailable: {{ .Values.updateStrategy.maxUnavailable }}
+      maxSurge: {{ .Values.updateStrategy.maxSurge }}
   selector:
     matchLabels:
       {{- include "notebook.selectorLabels" . | nindent 6 }}
@@ -36,7 +36,7 @@ spec:
       automountServiceAccountToken: false
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
-      terminationGracePeriodSeconds: 40
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
       containers:
         - name: notebook
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
@@ -50,22 +50,22 @@ spec:
           lifecycle:
             preStop:
               exec:
-                command: ["sleep", "5"]
+                command: ["sleep", "{{ .Values.preStopSleepSeconds }}"]
           startupProbe:
             exec:
               command: ["/app/healthcheck.sh", "startup"]
-            periodSeconds: 5
-            failureThreshold: 60
+            periodSeconds: {{ .Values.probes.startup.periodSeconds }}
+            failureThreshold: {{ .Values.probes.startup.failureThreshold }}
           readinessProbe:
             exec:
               command: ["/app/healthcheck.sh", "readiness"]
-            periodSeconds: 5
-            failureThreshold: 3
+            periodSeconds: {{ .Values.probes.readiness.periodSeconds }}
+            failureThreshold: {{ .Values.probes.readiness.failureThreshold }}
           livenessProbe:
             exec:
               command: ["/app/healthcheck.sh", "liveness"]
-            periodSeconds: 10
-            failureThreshold: 3
+            periodSeconds: {{ .Values.probes.liveness.periodSeconds }}
+            failureThreshold: {{ .Values.probes.liveness.failureThreshold }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           env:
@@ -79,34 +79,34 @@ spec:
               valueFrom:
                 secretKeyRef:
                   name: {{ .Values.existingSecret }}
-                  key: db-password
+                  key: {{ .Values.secretKeys.dbPassword }}
             {{- if or (eq .Values.auth.mode "no-oidc") (eq .Values.auth.mode "ldap") }}
             - name: NOTEBOOK_AUTH_ENCRYPTION_KEY
               valueFrom:
                 secretKeyRef:
                   name: {{ .Values.existingSecret }}
-                  key: auth-encryption-key
+                  key: {{ .Values.secretKeys.authEncryptionKey }}
             {{- end }}
             {{- if and (eq .Values.auth.mode "oidc") .Values.auth.oidc.serviceAccount.enabled }}
             - name: NOTEBOOK_OIDC_CLIENT_SECRET
               valueFrom:
                 secretKeyRef:
                   name: {{ .Values.existingSecret }}
-                  key: oidc-client-secret
+                  key: {{ .Values.secretKeys.oidcClientSecret }}
             {{- end }}
             {{- if and (eq .Values.auth.mode "ldap") .Values.auth.ldap.userSearchFilter }}
             - name: NOTEBOOK_LDAP_MANAGER_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: {{ .Values.existingSecret }}
-                  key: ldap-manager-password
+                  key: {{ .Values.secretKeys.ldapManagerPassword }}
             {{- end }}
             {{- if and (eq .Values.auth.mode "ldap") .Values.auth.ldap.trustStore.enabled (ne .Values.auth.ldap.trustStore.type "PEM") }}
             - name: NOTEBOOK_LDAP_TRUSTSTORE_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: {{ .Values.existingSecret }}
-                  key: ldap-truststore-password
+                  key: {{ .Values.secretKeys.ldapTruststorePassword }}
             {{- end }}
             {{- with .Values.extraEnv }}
             {{- toYaml . | nindent 12 }}
@@ -136,7 +136,7 @@ spec:
             secretName: {{ .Values.existingSecret }}
             defaultMode: 0440
             items:
-              - key: ldap-truststore
+              - key: {{ .Values.secretKeys.ldapTruststore }}
                 path: truststore
         {{- end }}
       {{- with .Values.nodeSelector }}
@@ -147,19 +147,28 @@ spec:
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      {{- if .Values.affinity }}
       affinity:
-        {{- if .Values.affinity }}
         {{- toYaml .Values.affinity | nindent 8 }}
-        {{- else }}
+      {{- else if eq .Values.ha.antiAffinity "hard" }}
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  {{- include "notebook.selectorLabels" . | nindent 18 }}
+              topologyKey: {{ .Values.ha.topologyKey }}
+      {{- else if eq .Values.ha.antiAffinity "soft" }}
+      affinity:
         podAntiAffinity:
           preferredDuringSchedulingIgnoredDuringExecution:
             - weight: 100
               podAffinityTerm:
                 labelSelector:
                   matchLabels:
-                    {{- include "notebook.selectorLabels" . | nindent 22 }}
-                topologyKey: kubernetes.io/hostname
-        {{- end }}
+                    {{- include "notebook.selectorLabels" . | nindent 20 }}
+                topologyKey: {{ .Values.ha.topologyKey }}
+      {{- end }}
       {{- with .Values.topologySpreadConstraints }}
       topologySpreadConstraints:
         {{- toYaml . | nindent 8 }}

@@ -185,7 +185,7 @@ public class NotebookCellService {
         } catch (NotebookApiException nae) {
             throw nae;
         } catch (Exception e) {
-            throw new NotebookApiException("INTERNAL_ERROR", "Failed to serialize document: " + e.getMessage(), HttpStatus.INTERNAL_SERVER_ERROR);
+            throw new NotebookApiException("INTERNAL_ERROR", "Failed to serialize document", HttpStatus.INTERNAL_SERVER_ERROR);
         }
     }
 

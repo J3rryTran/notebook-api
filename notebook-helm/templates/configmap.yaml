@@ -41,13 +41,13 @@ data:
           url: {{ .Values.auth.ldap.url | quote }}
           start-tls: {{ .Values.auth.ldap.startTls }}
           base-dn: {{ .Values.auth.ldap.baseDn | quote }}
+          username-attribute: {{ .Values.auth.ldap.usernameAttribute | quote }}
           {{- if .Values.auth.ldap.userDnPattern }}
           user-dn-pattern: {{ .Values.auth.ldap.userDnPattern | quote }}
           {{- end }}
           {{- if .Values.auth.ldap.userSearchFilter }}
           user-search-base: {{ .Values.auth.ldap.userSearchBase | quote }}
           user-search-filter: {{ .Values.auth.ldap.userSearchFilter | quote }}
-          username-attribute: {{ .Values.auth.ldap.usernameAttribute | quote }}
           manager-dn: {{ .Values.auth.ldap.managerDn | quote }}
           {{- end }}
           group-search-base: {{ .Values.auth.ldap.groupSearchBase | quote }}
@@ -63,7 +63,7 @@ data:
         {{- end }}
       max:
         cells: {{ .Values.notebook.maxCells }}
-        page-size: 200
+        page-size: {{ .Values.notebook.pageSize }}
       cell:
         source:
           max-size: {{ include "notebook.bytes" .Values.notebook.cellSourceMaxSize }}
@@ -82,8 +82,8 @@ data:
       rest-url: {{ .Values.kyuubi.restUrl | quote }}
       connect-timeout: {{ .Values.kyuubi.connectTimeout }}
       request-timeout: {{ .Values.kyuubi.requestTimeout }}
-      session-open-timeout: {{ .Values.kyuubi.sessionOpenTimeout }}
       idle-session-timeout: {{ .Values.kyuubi.idleSessionTimeout }}
+      idle-reaper-interval: {{ int64 .Values.kyuubi.idleReaperIntervalMs }}
       pin-to-instance: {{ .Values.kyuubi.pinToInstance }}
       allowed-session-config-keys: {{ toJson .Values.kyuubi.allowedSessionConfigKeys }}
       {{- if .Values.kyuubi.extraSessionConfigs }}

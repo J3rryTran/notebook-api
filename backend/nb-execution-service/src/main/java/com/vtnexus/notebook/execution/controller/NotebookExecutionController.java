@@ -1,12 +1,15 @@
 package com.vtnexus.notebook.execution.controller;
 
+import com.vtnexus.notebook.common.auth.KyuubiCredentialHolder;
+import org.springframework.http.HttpStatus;
+import com.vtnexus.notebook.common.exception.NotebookApiException;
+
 import com.vtnexus.notebook.execution.dto.NotebookExecutionDto;
 import com.vtnexus.notebook.execution.model.NotebookKyuubiSession;
 import com.vtnexus.notebook.execution.repository.NotebookCellRunRepository;
 import com.vtnexus.notebook.execution.repository.NotebookKyuubiSessionRepository;
 import com.vtnexus.notebook.execution.service.ExecutionService;
 import jakarta.servlet.http.HttpServletRequest;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
@@ -18,6 +21,20 @@ import java.util.concurrent.ForkJoinPool;
 @RestController
 @RequestMapping("/api/v1")
 public class NotebookExecutionController {
+
+    /**
+     * Credential gửi Kyuubi cho request hiện tại: đúng credential mà filter xác thực vừa kiểm
+     * (Bearer ở oidc, Basic giải mã từ phiên cookie ở no-oidc/ldap). Không đọc header Authorization
+     * thô: ở mode cookie, header đó do client tự gửi và chưa được xác thực.
+     */
+    private static String kyuubiCredential() {
+        String auth = KyuubiCredentialHolder.getAuthHeader();
+        if (auth == null || auth.isBlank()) {
+            throw new NotebookApiException("UNAUTHENTICATED", "Missing credential", HttpStatus.UNAUTHORIZED);
+        }
+        return auth;
+    }
+
 
     private final ExecutionService executionService;
     private final NotebookKyuubiSessionRepository sessionRepository;
@@ -31,7 +48,7 @@ public class NotebookExecutionController {
             @RequestBody(required = false) Map<String, Object> body,
             @AuthenticationPrincipal Object principal,
             HttpServletRequest request) {
-        String auth = request.getHeader(HttpHeaders.AUTHORIZATION);
+        String auth = kyuubiCredential();
 
         Map<String, String> configs = null;
         if (body != null && body.containsKey("configs") && body.get("configs") instanceof Map<?, ?> map) {
@@ -60,7 +77,7 @@ public class NotebookExecutionController {
             @AuthenticationPrincipal Object principal,
             HttpServletRequest request) {
         String cellId = body.get("cellId");
-        String auth = request.getHeader(HttpHeaders.AUTHORIZATION);
+        String auth = kyuubiCredential();
         return ResponseEntity.ok(executionService.submitExecution(sessionId, cellId, principal.toString(), auth));
     }
 
@@ -69,7 +86,7 @@ public class NotebookExecutionController {
             @PathVariable("executionId") String executionId,
             @AuthenticationPrincipal Object principal,
             HttpServletRequest request) {
-        String auth = request.getHeader(HttpHeaders.AUTHORIZATION);
+        String auth = kyuubiCredential();
         return ResponseEntity.ok(executionService.syncAndGetExecution(executionId, principal.toString(), auth));
     }
 
@@ -107,7 +124,7 @@ public class NotebookExecutionController {
 
         long timeout = Math.min(Math.max(waitMillis, 500), 10000);
         DeferredResult<ResponseEntity<Map<String, Object>>> deferred = new DeferredResult<>(timeout);
-        String auth = request.getHeader(HttpHeaders.AUTHORIZATION);
+        String auth = kyuubiCredential();
 
         deferred.onTimeout(() -> {
             deferred.setResult(ResponseEntity.noContent().build());
@@ -166,7 +183,7 @@ public class NotebookExecutionController {
             @PathVariable("executionId") String executionId,
             @AuthenticationPrincipal Object principal,
             HttpServletRequest request) {
-        String auth = request.getHeader(HttpHeaders.AUTHORIZATION);
+        String auth = kyuubiCredential();
         executionService.cancelExecution(executionId, principal.toString(), auth);
         return ResponseEntity.noContent().build();
     }
@@ -176,7 +193,7 @@ public class NotebookExecutionController {
             @PathVariable("runtimeId") String runtimeId,
             @AuthenticationPrincipal Object principal,
             HttpServletRequest request) {
-        String auth = request.getHeader(HttpHeaders.AUTHORIZATION);
+        String auth = kyuubiCredential();
         executionService.restartRuntime(runtimeId, principal.toString(), auth);
         return ResponseEntity.noContent().build();
     }
@@ -186,7 +203,7 @@ public class NotebookExecutionController {
             @PathVariable("executionId") String executionId,
             @AuthenticationPrincipal Object principal,
             HttpServletRequest request) {
-        String auth = request.getHeader(HttpHeaders.AUTHORIZATION);
+        String auth = kyuubiCredential();
         NotebookExecutionDto exec = executionService.syncAndGetExecution(executionId, principal.toString(), auth);
         return ResponseEntity.ok(exec.getResultOutput() != null ? exec.getResultOutput() : "[]");
     }
@@ -197,7 +214,7 @@ public class NotebookExecutionController {
             @RequestParam(value = "afterSequence", defaultValue = "0") long afterSequence,
             @AuthenticationPrincipal Object principal,
             HttpServletRequest request) {
-        String auth = request.getHeader(HttpHeaders.AUTHORIZATION);
+        String auth = kyuubiCredential();
         executionService.syncAndGetExecution(executionId, principal.toString(), auth);
         String logs = executionService.getExecutionLogs(executionId, afterSequence);
         return ResponseEntity.ok(Map.of(
@@ -213,7 +230,7 @@ public class NotebookExecutionController {
             @RequestParam(value = "limit", defaultValue = "100") int limit,
             @AuthenticationPrincipal Object principal,
             HttpServletRequest request) {
-        String auth = request.getHeader(HttpHeaders.AUTHORIZATION);
+        String auth = kyuubiCredential();
         NotebookExecutionDto exec = executionService.syncAndGetExecution(executionId, principal.toString(), auth);
         String outputJson = exec.getResultOutput();
         if (outputJson == null || outputJson.isBlank()) {
@@ -251,7 +268,7 @@ public class NotebookExecutionController {
             @PathVariable("sessionId") String sessionId,
             @AuthenticationPrincipal Object principal,
             HttpServletRequest request) {
-        String auth = request.getHeader(HttpHeaders.AUTHORIZATION);
+        String auth = kyuubiCredential();
         executionService.closeSession(sessionId, principal.toString(), auth);
         return ResponseEntity.noContent().build();
     }
@@ -277,7 +294,7 @@ public class NotebookExecutionController {
             @PathVariable("runtimeId") String runtimeId,
             @AuthenticationPrincipal Object principal,
             HttpServletRequest request) {
-        String auth = request.getHeader(HttpHeaders.AUTHORIZATION);
+        String auth = kyuubiCredential();
         executionService.interruptSession(runtimeId, principal.toString(), auth);
         return ResponseEntity.noContent().build();
     }
@@ -302,7 +319,7 @@ public class NotebookExecutionController {
             @AuthenticationPrincipal Object principal,
             HttpServletRequest request) {
         String user = principal != null ? principal.toString() : "anonymous";
-        String auth = request.getHeader(HttpHeaders.AUTHORIZATION);
+        String auth = kyuubiCredential();
 
         // 1. Kiểm tra kyuubi /ping cache 10s
         long now = System.currentTimeMillis();
@@ -326,7 +343,7 @@ public class NotebookExecutionController {
         // 3. Active / queued runs theo user
         long activeCount = cellRunRepository.countByUserAndStatus(user, "RUNNING");
         long queuedCount = cellRunRepository.countByUserAndStatus(user, "PENDING");
-        long userSessions = sessionRepository.count();
+        long userSessions = sessionRepository.countByUserIdAndStatusIn(user, java.util.List.of("READY", "BUSY"));
 
         Map<String, Object> resp = new HashMap<>();
         resp.put("kyuubi", kyuubiOk ? "HEALTHY" : "UNHEALTHY");

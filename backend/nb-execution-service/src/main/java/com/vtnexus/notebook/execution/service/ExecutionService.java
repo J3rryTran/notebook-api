@@ -108,7 +108,6 @@ public class ExecutionService {
                 isProxied = true;
                 String serviceToken = serviceAccountTokenProvider.getServiceAccountToken();
                 effectiveAuthHeader = "Bearer " + serviceToken;
-                validConfigs.put("hive.server2.proxy.user", rangerUser);
             }
         } else {
             if (rangerUser != null && !rangerUser.equals(user)) {
@@ -117,7 +116,7 @@ public class ExecutionService {
         }
 
         // Mở session mới trên Kyuubi (ngoài transaction)
-        Map<String, String> kSession = kyuubiRestClient.openSession(effectiveAuthHeader, validConfigs);
+        Map<String, String> kSession = kyuubiRestClient.openSession(effectiveAuthHeader, validConfigs, isProxied ? rangerUser : null);
 
         NotebookKyuubiSession session = NotebookKyuubiSession.builder()
                 .id(UUID.randomUUID().toString())
@@ -176,6 +175,10 @@ public class ExecutionService {
         SubmitPreparation prep = transactionTemplate.execute(status -> {
             NotebookKyuubiSession lockedSession = sessionRepository.findByIdForUpdate(sessionId)
                     .orElseThrow(() -> new NotebookApiException("NOTEBOOK_SESSION_NOT_FOUND", "Session not found", HttpStatus.NOT_FOUND));
+            if (!"READY".equals(lockedSession.getStatus()) && !"BUSY".equals(lockedSession.getStatus())) {
+                throw new NotebookApiException("NOTEBOOK_SESSION_NOT_READY",
+                        "Session is " + lockedSession.getStatus() + "; open a new session", HttpStatus.CONFLICT);
+            }
 
             int count = (lockedSession.getExecutionCountSeq() != null ? lockedSession.getExecutionCountSeq() : 0) + 1;
             lockedSession.setExecutionCountSeq(count);
@@ -226,13 +229,22 @@ public class ExecutionService {
         final String finalOpId = opId;
         final Exception finalSubmitEx = submitEx;
 
-        // Pha 3: Transaction 2 (cập nhật kết quả submit)
-        return transactionTemplate.execute(status -> {
+        // Pha 3: Transaction 2 (cập nhật kết quả submit). Chỉ ghi khi cell còn PENDING để không đè lệnh hủy
+        // đến trong lúc submit. Lỗi submit được lưu FAILED và commit trước, rồi mới ném ra (B8).
+        NotebookExecutionDto dto = transactionTemplate.execute(status -> {
             NotebookCellRun cr = cellRunRepository.findByIdForUpdate(cellRunId).orElseThrow();
             NotebookRun r = runRepository.findByIdForUpdate(runId).orElseThrow();
 
+            if (!"PENDING".equals(cr.getStatus())) {
+                if (finalOpId != null) {
+                    cr.setExecutionId(finalOpId);
+                    cellRunRepository.save(cr);
+                }
+                return toDto(cr, initialSession.getNotebookId(), sessionId, r.getErrorCode(), false);
+            }
+
+            Instant now = Instant.now();
             if (finalSubmitEx == null) {
-                Instant now = Instant.now();
                 cr.setStatus("RUNNING");
                 cr.setExecutionId(finalOpId);
                 cr.setStartedAt(now);
@@ -240,30 +252,53 @@ public class ExecutionService {
                 r.setStatus("RUNNING");
                 r.setCurrentExecutionId(finalOpId);
                 r.setStartedAt(now);
-
-                cellRunRepository.save(cr);
-                runRepository.save(r);
-                return toDto(cr, initialSession.getNotebookId(), sessionId, r.getErrorCode(), false);
             } else {
+                String errorCode = finalSubmitEx instanceof NotebookApiException nae ? nae.getCode() : "KYUUBI_SUBMIT_FAILED";
                 cr.setStatus("FAILED");
-                cr.setFinishedAt(Instant.now());
+                cr.setFinishedAt(now);
                 cr.setErrorMessage("Failed to submit statement to Kyuubi");
 
                 r.setStatus("FAILED");
-                r.setFinishedAt(Instant.now());
-                r.setErrorCode("KYUUBI_SUBMIT_FAILED");
+                r.setFinishedAt(now);
+                r.setErrorCode(errorCode);
                 r.setErrorMessage("Failed to submit statement to Kyuubi");
-
-                cellRunRepository.save(cr);
-                runRepository.save(r);
-
-                log.warn("Submit statement failed for cellRunId {}: {}", cellRunId, finalSubmitEx.getMessage());
-                if (finalSubmitEx instanceof NotebookApiException nae) {
-                    throw nae;
-                }
-                throw new NotebookApiException("KYUUBI_ERROR", "Failed to submit statement to Kyuubi", HttpStatus.BAD_GATEWAY);
             }
+            cellRunRepository.save(cr);
+            runRepository.save(r);
+            return toDto(cr, initialSession.getNotebookId(), sessionId, r.getErrorCode(), false);
         });
+
+        if (finalSubmitEx != null) {
+            log.warn("Submit statement failed for cellRunId {}: {}", cellRunId, finalSubmitEx.getMessage());
+            if (finalSubmitEx instanceof NotebookApiException nae) {
+                if ("RUNTIME_LOST".equals(nae.getCode())) {
+                    markSessionLost(sessionId);
+                }
+                throw nae;
+            }
+            throw new NotebookApiException("KYUUBI_ERROR", "Failed to submit statement to Kyuubi", HttpStatus.BAD_GATEWAY);
+        }
+
+        // Người dùng đã hủy trong lúc submit: operation vừa tạo trên Kyuubi phải hủy theo.
+        if ("CANCELED".equals(dto.getStatus()) && finalOpId != null) {
+            try {
+                String cancelAuth = prep.proxied()
+                        ? ("Bearer " + serviceAccountTokenProvider.getServiceAccountToken())
+                        : authHeader;
+                kyuubiRestClient.cancelOperation(finalOpId, prep.kyuubiInstance(), cancelAuth);
+            } catch (Exception ex) {
+                log.warn("Failed to cancel Kyuubi operation {} after late cancel: {}", finalOpId, ex.getMessage());
+            }
+        }
+        return dto;
+    }
+
+    private void markSessionLost(String sessionId) {
+        transactionTemplate.executeWithoutResult(status ->
+                sessionRepository.findByIdForUpdate(sessionId).ifPresent(sess -> {
+                    sess.setStatus("LOST");
+                    sessionRepository.save(sess);
+                }));
     }
 
     private record SubmitPreparation(String kyuubiSessionId, String kyuubiInstance, int executionCount, boolean proxied) {}
@@ -376,7 +411,12 @@ public class ExecutionService {
         });
     }
 
+    /**
+     * Phải gọi trong transaction. Khóa dòng cell-run trước khi đọc max(sequence) để hai lần sync đồng thời
+     * (/events và GET) không cấp trùng số thứ tự (UNIQUE cell_run_id, sequence).
+     */
     private void appendLogs(String cellRunId, List<String> lines) {
+        cellRunRepository.findByIdForUpdate(cellRunId);
         Long maxSeq = logRepository.findMaxSequenceByCellRunId(cellRunId);
         long startSeq = (maxSeq == null) ? 0 : maxSeq + 1;
         for (String line : lines) {
@@ -409,7 +449,7 @@ public class ExecutionService {
                 if ("SQL".equalsIgnoreCase(cellRun.getLanguage())) {
                     metadata = kyuubiRestClient.getResultSetMetadata(opId, instance, authHeader);
                 }
-                rowset = kyuubiRestClient.getOperationRowset(opId, instance, maxRows, authHeader);
+                rowset = fetchRows(opId, instance, authHeader);
             } catch (Exception ex) {
                 fetchEx = ex;
             }
@@ -572,6 +612,37 @@ public class ExecutionService {
         }
     }
 
+    /** Kích thước một trang FETCH_NEXT khi lấy kết quả từ Kyuubi. */
+    private static final int FETCH_PAGE_SIZE = 500;
+
+    /**
+     * Lấy kết quả theo từng trang FETCH_NEXT cho tới khi Kyuubi trả trang rỗng hoặc đã có {@code maxRows + 1}
+     * dòng (dòng dư chỉ để biết còn dữ liệu). Trả về {@code {"rows":[...], "truncated":bool}} cùng dạng
+     * rowset của Kyuubi để {@link KyuubiResultParser} đọc như thường.
+     */
+    private JsonNode fetchRows(String opId, String instance, String authHeader) {
+        ObjectNode merged = objectMapper.createObjectNode();
+        ArrayNode allRows = merged.putArray("rows");
+        while (allRows.size() <= maxRows) {
+            int want = Math.min(FETCH_PAGE_SIZE, maxRows + 1 - allRows.size());
+            JsonNode page = kyuubiRestClient.getOperationRowset(opId, instance, want, authHeader);
+            JsonNode pageRows = page.path("rows");
+            if (!pageRows.isArray() || pageRows.isEmpty()) {
+                break;
+            }
+            pageRows.forEach(allRows::add);
+            if (pageRows.size() < want) {
+                break;
+            }
+        }
+        boolean truncated = allRows.size() > maxRows;
+        while (allRows.size() > maxRows) {
+            allRows.remove(allRows.size() - 1);
+        }
+        merged.put("truncated", truncated);
+        return merged;
+    }
+
     private void buildAutoOutput(NotebookCellRun cellRun, JsonNode metadata, JsonNode rowset) {
         if ("PYTHON".equalsIgnoreCase(cellRun.getLanguage())) {
             List<List<JsonNode>> parsedRows = resultParser.rows(rowset);
@@ -623,8 +694,7 @@ public class ExecutionService {
                 }
             }
 
-            boolean truncated = rows.size() >= maxRows;
-            tableJson.put("truncated", truncated);
+            tableJson.put("truncated", rowset != null && rowset.path("truncated").asBoolean(false));
 
             // Plain text ascii table
             String asciiTable = KyuubiResultParser.renderPlainAsciiTable(cols, rows);
@@ -749,7 +819,6 @@ public class ExecutionService {
                 isProxied = true;
                 String serviceToken = serviceAccountTokenProvider.getServiceAccountToken();
                 effectiveAuthHeader = "Bearer " + serviceToken;
-                configs.put("hive.server2.proxy.user", rangerUser);
             }
         }
 
@@ -762,7 +831,7 @@ public class ExecutionService {
             } catch (Exception ignored) {}
         }
 
-        Map<String, String> newSession = kyuubiRestClient.openSession(effectiveAuthHeader, configs);
+        Map<String, String> newSession = kyuubiRestClient.openSession(effectiveAuthHeader, configs, isProxied ? rangerUser : null);
 
         final boolean finalProxied = isProxied;
         final String finalEffectiveUser = isProxied ? rangerUser : user;

@@ -43,7 +43,7 @@ class StartupFailureTest {
                             "--notebook.auth.mode=oidc",
                             "--notebook.internalToken=secret-token"
                     );
-        }).hasMessageContaining("Invalid datasource URL [jdbc:postgresql://localhost:5432/notebook]: notebook-api only supports MariaDB");
+        }).hasMessageContaining("Invalid datasource URL scheme [jdbc:postgresql:]: notebook-api only supports MariaDB");
     }
 
     @Test

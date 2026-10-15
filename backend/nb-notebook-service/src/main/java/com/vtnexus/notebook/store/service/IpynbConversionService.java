@@ -25,7 +25,7 @@ public class IpynbConversionService {
             com.vtnexus.notebook.common.config.NotebookProperties notebookProperties) {
         this.objectMapper = objectMapper;
         this.notebookService = notebookService;
-        this.maxImportSize = notebookProperties.getAnImport().getMaxSize();
+        this.maxImportSize = notebookProperties.getImport().getMaxSize();
     }
 
     public Notebook importNotebook(String format, String name, String folderId, String contentJson, String user) {
@@ -37,7 +37,7 @@ public class IpynbConversionService {
         try {
             root = objectMapper.readTree(contentJson);
         } catch (Exception e) {
-            throw new NotebookApiException("INVALID_REQUEST", "Failed to parse .ipynb JSON: " + e.getMessage(), HttpStatus.BAD_REQUEST);
+            throw new NotebookApiException("INVALID_REQUEST", "Failed to parse .ipynb JSON", HttpStatus.BAD_REQUEST);
         }
 
         try {
@@ -184,7 +184,7 @@ public class IpynbConversionService {
         } catch (NotebookApiException nae) {
             throw nae;
         } catch (Exception e) {
-            throw new NotebookApiException("INVALID_REQUEST", "Failed to parse .ipynb file: " + e.getMessage(), HttpStatus.BAD_REQUEST);
+            throw new NotebookApiException("INVALID_REQUEST", "Failed to parse .ipynb file", HttpStatus.BAD_REQUEST);
         }
     }
 

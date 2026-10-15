@@ -1,5 +1,8 @@
 # Thiết kế lại chart `notebook-helm`
 
+> Cập nhật 2026-10-15 (sau 0.2.1): bỏ thư mục `notebook-helm/ci/`; `values.yaml` chứa giá trị deploy thật (mode `oidc`, `replicaCount: 4`, PDB `minAvailable: 2`, `updateStrategy` 1/1, `mariadb.maxPoolSize: 5`); thêm `ha.*`, `updateStrategy`, `secretKeys.*`, `probes.*`, `terminationGracePeriodSeconds`, `preStopSleepSeconds`, `notebook.pageSize`, `ingress.annotations` (không còn viết cứng trong template); `scripts/helm-check.sh` và `contract-check.sh` kiểm trên `values.yaml` thật, mode khác thử bằng `--set`; 21 ca lỗi. Các chỗ nhắc `ci/` bên dưới là lịch sử.
+> Cập nhật 2026-10-15 (chart 0.2.1): bỏ `kyuubi.sessionOpenTimeout` (session mở `launch.async`, không có code dùng); thêm `kyuubi.idleReaperIntervalMs`; `username-attribute` luôn render ở mode `ldap`; thêm 2 điều kiện validate LDAP (tổng 18 ca lỗi trong `scripts/helm-check.sh`); NOTES ghi đúng tên user proxy `service-account-<clientId>`.
+
 Trạng thái: thiết kế, chưa thực hiện. Ngày: 2026-10-14. Đối tượng thực thi: AI agent.
 Thay thế `plan/Chart.md` (bản cũ có Vault, PostgreSQL, `output.mode: NOTEBOOK`, đều đã bỏ) và mục
 C4, C5, C6 của `plan/huong-dan-sua-vong-3.md`. Plan gốc vẫn là `plan/mariadb-auth-plan.md`.
@@ -104,8 +107,8 @@ kyuubi:
   restUrl: ""                 # REQUIRED, vd http://kyuubi-rest.kyuubi.svc.cluster.local:10099
   connectTimeout: 10s
   requestTimeout: 60s
-  sessionOpenTimeout: 10m
-  idleSessionTimeout: 30m
+  idleSessionTimeout: 30m     # 0s = tắt; IdleSessionReaper đóng session rảnh
+  idleReaperIntervalMs: 300000
   pinToInstance: true
   allowedSessionConfigKeys:
     - spark.executor.memory
@@ -245,7 +248,7 @@ notebook:
   cell.source.max-size, document.max-size, import.max-size, revision.max-per-notebook
   results.max-rows, events.pool-size, events.max-wait
 kyuubi:
-  rest-url, connect-timeout, request-timeout, session-open-timeout, idle-session-timeout,
+  rest-url, connect-timeout, request-timeout, idle-session-timeout, idle-reaper-interval,
   pin-to-instance, allowed-session-config-keys, session-configs (= extraSessionConfigs)
 ```
 
@@ -332,6 +335,8 @@ khóa tạo **một lần** trong Secret. Mode `oidc` không dùng khóa này.
 | `mode=ldap` và không đúng một trong `userDnPattern`/`userSearchFilter` | `set exactly one of auth.ldap.userDnPattern or userSearchFilter` |
 | `userSearchFilter` có mà `managerDn` rỗng | `auth.ldap.managerDn is required with userSearchFilter` |
 | `ldap.url` bắt đầu `ldap://` và `startTls=false` | `plain ldap:// requires auth.ldap.startTls=true` |
+| `ldap.url` bắt đầu `ldaps://` và `startTls=true` | `auth.ldap.startTls must be false with ldaps:// (already TLS)` |
+| `mode=ldap` và `usernameAttribute` rỗng | `auth.ldap.usernameAttribute is required for mode=ldap` |
 | `kyuubi.extraSessionConfigs` có key `kyuubi.engine.spark.output.mode` | `output.mode must stay at Kyuubi default (AUTO)` |
 | `ingress.enabled` và `ingress.host` rỗng | `ingress.host is required` |
 | `service.type=NodePort` và `nodePort` ngoài 30000–32767 | `service.nodePort must be in 30000-32767` |
@@ -409,8 +414,8 @@ thêm `split.*` cho replica/resources riêng.
 In ra theo mode:
 
 1. Secret `{{ existingSecret }}` phải có các key: *(liệt kê đúng theo mode)*.
-2. User MariaDB `{{ mariadb.username }}` có quyền trên `{{ mariadb.database }}.*` (câu `GRANT` ở
-   `backend/sql/000_user.sql`).
+2. User MariaDB `{{ mariadb.username }}` có quyền trên `{{ mariadb.database }}.*` (liệt kê quyền ngay trong NOTES;
+   câu `GRANT` mẫu ở `notebook-helm/README.md`).
 3. `mode=oidc`: client Keycloak `{{ clientId }}` là **public**, *Valid redirect URIs* có
    `{{ publicUrl }}/auth/callback`, *Web origins* có `{{ publicUrl }}`, có audience mapper `kyuubi`.
 4. `serviceAccount.enabled`: Kyuubi có `hadoop.proxyuser.<user của service account>.users/hosts`.

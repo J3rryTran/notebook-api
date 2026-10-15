@@ -208,6 +208,9 @@ root
           automaticSilentRenew: true,
           userStore: new oidc.WebStorageStateStore({ store: window.sessionStorage })
         });
+        // Silent renew xong thì dùng token mới ngay, không chờ tới khi gặp 401
+        userManager.events.addUserLoaded(user => { window.currentUser = user; });
+        userManager.events.addUserUnloaded(() => { window.currentUser = null; });
       }
       return userManager;
     }

@@ -68,7 +68,6 @@ kyuubi:
   pin-to-instance: true
   connect-timeout: 10s
   request-timeout: 60s
-  session-open-timeout: 10m
   idle-session-timeout: 30m
   session-configs:
     kyuubi.session.engine.launch.async: "true"

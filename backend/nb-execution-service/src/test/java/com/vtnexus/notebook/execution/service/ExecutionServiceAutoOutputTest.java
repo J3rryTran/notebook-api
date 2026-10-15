@@ -32,6 +32,8 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -147,6 +149,60 @@ class ExecutionServiceAutoOutputTest {
         // Kiểm tra ascii table text/plain
         assertThat(outJson.get("data").has("text/plain")).isTrue();
         assertThat(outJson.get("data").get("text/plain").asText()).contains("Alice").contains("Bob");
+    }
+
+    private JsonNode rowsetPage(int from, int count) {
+        com.fasterxml.jackson.databind.node.ObjectNode page = objectMapper.createObjectNode();
+        com.fasterxml.jackson.databind.node.ArrayNode rows = page.putArray("rows");
+        for (int i = 0; i < count; i++) {
+            rows.addObject().putArray("fields").addObject().put("dataType", "INT_TYPE").put("value", from + i);
+        }
+        page.put("rowCount", count);
+        return page;
+    }
+
+    private NotebookCellRun finishedSqlCellRun(String cellRunId, String opId) throws Exception {
+        NotebookRun run = NotebookRun.builder().id("run-p").notebookId("nb-1").triggeredBy("alice").status("RUNNING").build();
+        NotebookCellRun cellRun = NotebookCellRun.builder()
+                .id(cellRunId).notebookRunId("run-p").executionId(opId).language("SQL").status("RUNNING").build();
+        when(cellRunRepository.findById(cellRunId)).thenReturn(Optional.of(cellRun));
+        when(cellRunRepository.findByIdForUpdate(cellRunId)).thenReturn(Optional.of(cellRun));
+        when(runRepository.findById("run-p")).thenReturn(Optional.of(run));
+        when(runRepository.findByIdForUpdate("run-p")).thenReturn(Optional.of(run));
+        when(kyuubiRestClient.getOperationEvent(eq(opId), any(), any())).thenReturn(objectMapper.readTree("{\"state\":\"FINISHED\"}"));
+        when(kyuubiRestClient.getResultSetMetadata(eq(opId), any(), any()))
+                .thenReturn(objectMapper.readTree("{\"columns\":[{\"columnName\":\"n\",\"dataType\":\"INT_TYPE\"}]}"));
+        when(kyuubiRestClient.getOperationLog(eq(opId), any(), anyInt(), any())).thenReturn(Collections.emptyList());
+        return cellRun;
+    }
+
+    @Test
+    void testSqlResultFetchesAllPagesAndMarksTruncatedOnlyWhenMoreRowsExist() throws Exception {
+        NotebookCellRun cellRun = finishedSqlCellRun("crun-pages", "op-pages");
+        // maxRows = 1000; Kyuubi còn dữ liệu sau 1000 dòng
+        when(kyuubiRestClient.getOperationRowset(eq("op-pages"), any(), anyInt(), any()))
+                .thenReturn(rowsetPage(0, 500), rowsetPage(500, 500), rowsetPage(1000, 1));
+
+        executionService.syncAndGetExecution("crun-pages", "alice", "Bearer dummy");
+
+        JsonNode table = objectMapper.readTree(cellRun.getOutputJson()).get("data").get("application/vnd.notebook.table+json");
+        assertThat(table.get("rows")).hasSize(1000);
+        assertThat(table.get("truncated").asBoolean()).isTrue();
+        assertThat(cellRun.getRowCount()).isEqualTo(1000L);
+        verify(kyuubiRestClient, times(3)).getOperationRowset(eq("op-pages"), any(), anyInt(), any());
+    }
+
+    @Test
+    void testSqlResultOfExactlyMaxRowsIsNotTruncated() throws Exception {
+        NotebookCellRun cellRun = finishedSqlCellRun("crun-exact", "op-exact");
+        when(kyuubiRestClient.getOperationRowset(eq("op-exact"), any(), anyInt(), any()))
+                .thenReturn(rowsetPage(0, 500), rowsetPage(500, 500), rowsetPage(0, 0));
+
+        executionService.syncAndGetExecution("crun-exact", "alice", "Bearer dummy");
+
+        JsonNode table = objectMapper.readTree(cellRun.getOutputJson()).get("data").get("application/vnd.notebook.table+json");
+        assertThat(table.get("rows")).hasSize(1000);
+        assertThat(table.get("truncated").asBoolean()).isFalse();
     }
 
     @Test
@@ -359,6 +415,7 @@ class ExecutionServiceAutoOutputTest {
                 .userId("alice")
                 .kyuubiSessionId("ksess-1")
                 .kyuubiInstance("inst-1")
+                .status("READY")
                 .executionCountSeq(0)
                 .build();
 
@@ -375,17 +432,20 @@ class ExecutionServiceAutoOutputTest {
         when(kyuubiRestClient.submitStatement(any(), any(), any(), any(), any()))
                 .thenThrow(new NotebookApiException("KYUUBI_ERROR", "Engine crashed", HttpStatus.BAD_GATEWAY));
 
-        when(cellRunRepository.findByIdForUpdate(any())).thenAnswer(inv -> {
-            return Optional.of(NotebookCellRun.builder().id((String) inv.getArgument(0)).build());
-        });
-        when(runRepository.findByIdForUpdate(any())).thenAnswer(inv -> {
-            return Optional.of(NotebookRun.builder().id((String) inv.getArgument(0)).build());
-        });
+        NotebookCellRun pendingCellRun = NotebookCellRun.builder().id("cr").status("PENDING").build();
+        NotebookRun pendingRun = NotebookRun.builder().id("r").status("PENDING").build();
+        when(cellRunRepository.findByIdForUpdate(any())).thenReturn(Optional.of(pendingCellRun));
+        when(runRepository.findByIdForUpdate(any())).thenReturn(Optional.of(pendingRun));
 
         assertThatThrownBy(() -> executionService.submitExecution(sessionId, "cell-1", "alice", "Bearer token"))
                 .isInstanceOf(NotebookApiException.class);
 
         // Verify session executionCountSeq was incremented
         assertThat(session.getExecutionCountSeq()).isEqualTo(1);
+        // B8: FAILED được ghi (và transaction đó kết thúc bình thường, không ném lỗi bên trong)
+        assertThat(pendingCellRun.getStatus()).isEqualTo("FAILED");
+        assertThat(pendingRun.getStatus()).isEqualTo("FAILED");
+        assertThat(pendingRun.getErrorCode()).isEqualTo("KYUUBI_ERROR");
+        verify(cellRunRepository, atLeastOnce()).save(pendingCellRun);
     }
 }

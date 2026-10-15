@@ -26,7 +26,9 @@ public class DatasourceGuard implements EnvironmentPostProcessor, Ordered {
             throw new IllegalStateException("spring.datasource.url is required. " + ERROR_MESSAGE);
         }
         if (!url.trim().startsWith(REQUIRED_PREFIX)) {
-            throw new IllegalStateException("Invalid datasource URL [" + url + "]: " + ERROR_MESSAGE);
+            // Chỉ in phần scheme: URL có thể chứa user/password trong query string.
+            String scheme = url.contains("//") ? url.substring(0, url.indexOf("//")) : "<unknown>";
+            throw new IllegalStateException("Invalid datasource URL scheme [" + scheme + "]: " + ERROR_MESSAGE);
         }
     }
 }

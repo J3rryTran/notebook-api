@@ -18,12 +18,29 @@ import org.springframework.ldap.query.LdapQueryBuilder;
 import org.springframework.ldap.support.LdapEncoder;
 import org.springframework.stereotype.Service;
 
+import org.springframework.ldap.support.LdapUtils;
+
+import javax.naming.Name;
+import javax.naming.directory.Attribute;
+import javax.naming.directory.Attributes;
 import javax.naming.directory.DirContext;
 import javax.naming.ldap.LdapName;
+import javax.net.SocketFactory;
 import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLSocketFactory;
+import javax.net.ssl.TrustManager;
 import javax.net.ssl.TrustManagerFactory;
+import javax.net.ssl.X509TrustManager;
 import java.io.FileInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.net.InetAddress;
+import java.net.Socket;
 import java.security.KeyStore;
+import java.security.SecureRandom;
+import java.security.cert.Certificate;
+import java.security.cert.CertificateFactory;
+import java.security.cert.X509Certificate;
 import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
@@ -69,16 +86,20 @@ public class LdapAuthenticator {
         baseEnv.put("com.sun.jndi.ldap.connect.timeout", String.valueOf(connectTimeoutMs));
         baseEnv.put("com.sun.jndi.ldap.read.timeout", String.valueOf(readTimeoutMs));
 
-        // 6. TLS
+        // 6. TLS: một SSLSocketFactory dùng cho cả ldaps:// lẫn StartTLS (B9)
         boolean isDev = environment.acceptsProfiles(Profiles.of("dev"));
-        if (ldap.getUrl().startsWith("ldaps://")) {
-            if (ldap.isTrustAll() && isDev) {
-                configureTrustAllSsl(baseEnv);
-            } else if (ldap.getTrustStore() != null && !ldap.getTrustStore().isBlank()) {
-                configureCustomTrustStore(baseEnv, ldap.getTrustStore());
-            }
+        SSLSocketFactory sslFactory = buildSslSocketFactory(ldap, isDev);
+        boolean ldaps = ldap.getUrl().startsWith("ldaps://");
+        if (ldaps) {
+            ConfiguredSslSocketFactory.delegate = sslFactory;
+            baseEnv.put("java.naming.ldap.factory.socket", ConfiguredSslSocketFactory.class.getName());
         } else if (ldap.isStartTls()) {
-            cs.setAuthenticationStrategy(new DefaultTlsDirContextAuthenticationStrategy());
+            DefaultTlsDirContextAuthenticationStrategy tls = new DefaultTlsDirContextAuthenticationStrategy();
+            tls.setSslSocketFactory(sslFactory);
+            if (ldap.isTrustAll() && isDev) {
+                tls.setHostnameVerifier((host, session) -> true);
+            }
+            cs.setAuthenticationStrategy(tls);
         }
 
         cs.setBaseEnvironmentProperties(baseEnv);
@@ -89,7 +110,8 @@ public class LdapAuthenticator {
             cs.setPassword(ldap.getManagerPassword() != null ? ldap.getManagerPassword() : "");
         }
 
-        cs.setPooled(true);
+        // JNDI connection pooling không dùng được với StartTLS (kết nối nâng cấp TLS không trả về pool an toàn)
+        cs.setPooled(!ldap.isStartTls() || ldaps);
         cs.afterPropertiesSet();
 
         this.sharedContextSource = cs;
@@ -102,72 +124,76 @@ public class LdapAuthenticator {
         return ms > 0 ? ms : defaultMs;
     }
 
-    private void configureTrustAllSsl(Map<String, Object> baseEnv) {
+    private SSLSocketFactory buildSslSocketFactory(AuthProperties.LdapProperties ldap, boolean isDev) {
         try {
+            TrustManager[] trustManagers;
+            if (ldap.isTrustAll() && isDev) {
+                log.warn("LDAP trustAll is enabled (dev profile): server certificates are NOT verified");
+                trustManagers = new TrustManager[]{new X509TrustManager() {
+                    public X509Certificate[] getAcceptedIssuers() { return new X509Certificate[0]; }
+                    public void checkClientTrusted(X509Certificate[] certs, String authType) {}
+                    public void checkServerTrusted(X509Certificate[] certs, String authType) {}
+                }};
+            } else if (ldap.getTrustStore() != null && !ldap.getTrustStore().isBlank()) {
+                TrustManagerFactory tmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
+                tmf.init(loadTrustStore(ldap));
+                trustManagers = tmf.getTrustManagers();
+            } else {
+                return (SSLSocketFactory) SSLSocketFactory.getDefault();
+            }
             SSLContext sslContext = SSLContext.getInstance("TLS");
-            sslContext.init(null, new javax.net.ssl.TrustManager[]{
-                    new javax.net.ssl.X509TrustManager() {
-                        public java.security.cert.X509Certificate[] getAcceptedIssuers() { return null; }
-                        public void checkClientTrusted(java.security.cert.X509Certificate[] certs, String authType) {}
-                        public void checkServerTrusted(java.security.cert.X509Certificate[] certs, String authType) {}
-                    }
-            }, new java.security.SecureRandom());
-            baseEnv.put("java.naming.ldap.factory.socket", DummySSLSocketFactory.class.getName());
+            sslContext.init(null, trustManagers, new SecureRandom());
+            return sslContext.getSocketFactory();
         } catch (Exception ex) {
-            log.warn("Failed to configure trust-all SSL: {}", ex.getMessage());
+            // Không lặng lẽ rơi về truststore mặc định: cấu hình TLS sai phải lộ ra ngay.
+            throw new IllegalStateException("Cannot initialise LDAP TLS trust store: " + ex.getClass().getSimpleName(), ex);
         }
     }
 
-    private void configureCustomTrustStore(Map<String, Object> baseEnv, String trustStorePath) {
-        try {
-            KeyStore ks = KeyStore.getInstance(KeyStore.getDefaultType());
-            try (FileInputStream fis = new FileInputStream(trustStorePath)) {
-                ks.load(fis, null);
+    private KeyStore loadTrustStore(AuthProperties.LdapProperties ldap) throws Exception {
+        String type = ldap.getTrustStoreType() != null ? ldap.getTrustStoreType().toUpperCase() : "PKCS12";
+        char[] password = ldap.getTrustStorePassword() != null && !ldap.getTrustStorePassword().isEmpty()
+                ? ldap.getTrustStorePassword().toCharArray() : null;
+        try (InputStream in = new FileInputStream(ldap.getTrustStore())) {
+            if ("PEM".equals(type)) {
+                KeyStore ks = KeyStore.getInstance(KeyStore.getDefaultType());
+                ks.load(null, null);
+                int i = 0;
+                for (Certificate cert : CertificateFactory.getInstance("X.509").generateCertificates(in)) {
+                    ks.setCertificateEntry("ldap-ca-" + i++, cert);
+                }
+                if (i == 0) {
+                    throw new IllegalStateException("PEM trust store contains no certificate");
+                }
+                return ks;
             }
-            TrustManagerFactory tmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
-            tmf.init(ks);
-            SSLContext sslContext = SSLContext.getInstance("TLS");
-            sslContext.init(null, tmf.getTrustManagers(), null);
-            // Java JNDI socket factory configuration
-        } catch (Exception ex) {
-            log.warn("Failed to load trustStore: {}", ex.getMessage());
+            KeyStore ks = KeyStore.getInstance(type);
+            ks.load(in, password);
+            return ks;
         }
     }
 
-    public static class DummySSLSocketFactory extends javax.net.ssl.SSLSocketFactory {
-        private static javax.net.ssl.SSLSocketFactory defaultFactory;
-        static {
-            try {
-                SSLContext sc = SSLContext.getInstance("TLS");
-                sc.init(null, new javax.net.ssl.TrustManager[]{
-                        new javax.net.ssl.X509TrustManager() {
-                            public java.security.cert.X509Certificate[] getAcceptedIssuers() { return null; }
-                            public void checkClientTrusted(java.security.cert.X509Certificate[] certs, String authType) {}
-                            public void checkServerTrusted(java.security.cert.X509Certificate[] certs, String authType) {}
-                        }
-                }, new java.security.SecureRandom());
-                defaultFactory = sc.getSocketFactory();
-            } catch (Exception e) {
-                throw new RuntimeException(e);
-            }
+    /**
+     * JNDI chỉ nhận socket factory dưới dạng tên class có {@code static getDefault()}; class này trả về
+     * factory đã dựng từ cấu hình truststore (dùng cho ldaps://).
+     */
+    public static class ConfiguredSslSocketFactory extends SSLSocketFactory {
+        static volatile SSLSocketFactory delegate = (SSLSocketFactory) SSLSocketFactory.getDefault();
+
+        public static SocketFactory getDefault() { return new ConfiguredSslSocketFactory(); }
+        @Override public String[] getDefaultCipherSuites() { return delegate.getDefaultCipherSuites(); }
+        @Override public String[] getSupportedCipherSuites() { return delegate.getSupportedCipherSuites(); }
+        @Override public Socket createSocket(Socket s, String host, int port, boolean autoClose) throws IOException {
+            return delegate.createSocket(s, host, port, autoClose);
         }
-        public static javax.net.SocketFactory getDefault() { return new DummySSLSocketFactory(); }
-        @Override public String[] getDefaultCipherSuites() { return defaultFactory.getDefaultCipherSuites(); }
-        @Override public String[] getSupportedCipherSuites() { return defaultFactory.getSupportedCipherSuites(); }
-        @Override public java.net.Socket createSocket(java.net.Socket s, String host, int port, boolean autoClose) throws java.io.IOException {
-            return defaultFactory.createSocket(s, host, port, autoClose);
+        @Override public Socket createSocket() throws IOException { return delegate.createSocket(); }
+        @Override public Socket createSocket(String host, int port) throws IOException { return delegate.createSocket(host, port); }
+        @Override public Socket createSocket(String host, int port, InetAddress localHost, int localPort) throws IOException {
+            return delegate.createSocket(host, port, localHost, localPort);
         }
-        @Override public java.net.Socket createSocket(String host, int port) throws java.io.IOException {
-            return defaultFactory.createSocket(host, port);
-        }
-        @Override public java.net.Socket createSocket(String host, int port, java.net.InetAddress localHost, int localPort) throws java.io.IOException {
-            return defaultFactory.createSocket(host, port, localHost, localPort);
-        }
-        @Override public java.net.Socket createSocket(java.net.InetAddress host, int port) throws java.io.IOException {
-            return defaultFactory.createSocket(host, port);
-        }
-        @Override public java.net.Socket createSocket(java.net.InetAddress address, int port, java.net.InetAddress localAddress, int localPort) throws java.io.IOException {
-            return defaultFactory.createSocket(address, port, localAddress, localPort);
+        @Override public Socket createSocket(InetAddress host, int port) throws IOException { return delegate.createSocket(host, port); }
+        @Override public Socket createSocket(InetAddress address, int port, InetAddress localAddress, int localPort) throws IOException {
+            return delegate.createSocket(address, port, localAddress, localPort);
         }
     }
 
@@ -206,11 +232,8 @@ public class LdapAuthenticator {
                     targetUserDn = targetUserDn + "," + ldap.getBaseDn();
                 }
 
-                // Bind với mật khẩu
-                bindUser(targetUserDn, password);
-
-                // Đọc lại entry để lấy tên chuẩn usernameAttribute (B3.4)
-                canonicalName = readCanonicalUsername(targetUserDn, ldap.getUsernameAttribute(), username);
+                // Bind với mật khẩu, đọc tên chuẩn bằng chính kết nối của người dùng (B3.4, B9)
+                canonicalName = bindAndReadCanonicalName(targetUserDn, password, ldap.getUsernameAttribute());
             } else {
                 // Nhánh userSearch: 2. Tìm DN thật qua ContextMapper và getNameInNamespace()
                 String searchFilter = ldap.getUserSearchFilter();
@@ -238,8 +261,8 @@ public class LdapAuthenticator {
                 targetUserDn = entry.dn();
                 canonicalName = entry.canonicalUsername();
 
-                // Bind với mật khẩu
-                bindUser(targetUserDn, password);
+                // Bind với mật khẩu qua cùng ContextSource (cùng TLS) với bước tìm kiếm
+                bindAndReadCanonicalName(targetUserDn, password, null);
             }
 
             // 5. Kiểm tra adminGroup nếu có cấu hình
@@ -266,32 +289,33 @@ public class LdapAuthenticator {
         }
     }
 
-    private void bindUser(String userDn, String password) throws Exception {
-        LdapContextSource userContext = new LdapContextSource();
-        userContext.setUrl(authProperties.getLdap().getUrl());
-        userContext.setUserDn(userDn);
-        userContext.setPassword(password);
-        userContext.setPooled(false);
-
-        Map<String, Object> baseEnv = new HashMap<>();
-        long connectTimeoutMs = parseTimeoutMs(authProperties.getLdap().getConnectTimeout(), 5000);
-        long readTimeoutMs = parseTimeoutMs(authProperties.getLdap().getReadTimeout(), 10000);
-        baseEnv.put("com.sun.jndi.ldap.connect.timeout", String.valueOf(connectTimeoutMs));
-        baseEnv.put("com.sun.jndi.ldap.read.timeout", String.valueOf(readTimeoutMs));
-        userContext.setBaseEnvironmentProperties(baseEnv);
-
-        userContext.afterPropertiesSet();
-        DirContext ctx = userContext.getReadOnlyContext();
-        ctx.close();
-    }
-
-    private String readCanonicalUsername(String userDn, String usernameAttr, String defaultName) {
+    /**
+     * Bind bằng DN + mật khẩu người dùng qua {@code sharedContextSource} (cùng URL, TLS, timeout).
+     * {@code getContext(principal, credentials)} của Spring LDAP luôn tắt pooling nên mật khẩu không nằm lại
+     * trong pool. Khi {@code usernameAttribute} khác null: đọc thuộc tính đó từ entry của chính người dùng;
+     * entry không có thuộc tính → từ chối, không rơi về chuỗi người dùng gõ.
+     */
+    private String bindAndReadCanonicalName(String userDn, String password, String usernameAttribute) throws Exception {
+        DirContext ctx = sharedContextSource.getContext(userDn, password);
         try {
-            DirContextAdapter adapter = (DirContextAdapter) sharedLdapTemplate.lookup(userDn);
-            String val = adapter.getStringAttribute(usernameAttr);
-            return (val != null && !val.isBlank()) ? val : defaultName;
-        } catch (Exception e) {
-            return defaultName;
+            if (usernameAttribute == null) {
+                return null;
+            }
+            Name relative = LdapUtils.newLdapName(userDn);
+            Name base = sharedContextSource.getBaseLdapName();
+            if (base != null && !base.isEmpty() && relative.startsWith(base)) {
+                relative = LdapUtils.removeFirst(relative, base);
+            }
+            Attributes attrs = ctx.getAttributes(relative, new String[]{usernameAttribute});
+            Attribute attr = attrs.get(usernameAttribute);
+            Object value = attr != null ? attr.get() : null;
+            if (value == null || value.toString().isBlank()) {
+                log.warn("LDAP entry {} has no attribute {}", userDn, usernameAttribute);
+                throw new NotebookApiException("INVALID_CREDENTIALS", "Invalid credentials", HttpStatus.UNAUTHORIZED);
+            }
+            return value.toString();
+        } finally {
+            LdapUtils.closeContext(ctx);
         }
     }
 

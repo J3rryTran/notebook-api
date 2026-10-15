@@ -16,5 +16,7 @@ public interface NotebookKyuubiSessionRepository extends JpaRepository<NotebookK
     Optional<NotebookKyuubiSession> findByIdForUpdate(@org.springframework.data.repository.query.Param("id") String id);
 
     Optional<NotebookKyuubiSession> findFirstByNotebookIdAndUserIdAndStatusInOrderByCreatedAtDesc(String notebookId, String userId, java.util.Collection<String> statuses);
-}
 
+    long countByUserIdAndStatusIn(String userId, java.util.Collection<String> statuses);
+    java.util.List<NotebookKyuubiSession> findByStatusInAndLastUsedAtBefore(java.util.Collection<String> statuses, java.time.Instant cutoff);
+}

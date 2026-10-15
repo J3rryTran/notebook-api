@@ -1,100 +1,146 @@
-# ---- Bắt buộc phải điền (đánh dấu REQUIRED); thiếu thì render lỗi ----
+# =============================================================================
+# Values cho Notebook (all-in-one, contract 2). Mọi giá trị deploy nằm ở file này; template không viết
+# cứng giá trị môi trường. Chart kiểm values lúc render (values.schema.json + templates/_helpers.tpl).
+# Môi trường: lakehouse thử nghiệm, đăng nhập OIDC (Keycloak realm lakehouse).
+# =============================================================================
 
-topology: allInOne            # allInOne (vòng này) | split (chưa hỗ trợ, render lỗi)
+topology: allInOne              # allInOne | split (split chưa hỗ trợ, render lỗi)
 
 image:
   repository: docker.io/j3rrytran/notebook
-  tag: ""                     # rỗng = .Chart.AppVersion
+  tag: ""                       # rỗng = appVersion trong Chart.yaml
   pullPolicy: IfNotPresent
-  pullSecrets: []             # [{name: regcred}]
+  pullSecrets: []               # [{name: regcred}]
 
-replicaCount: 2
+nameOverride: ""
+fullnameOverride: ""
 
-existingSecret: notebook-secrets   # REQUIRED. Key xem mục 4
+# -----------------------------------------------------------------------------
+# HA
+# -----------------------------------------------------------------------------
+replicaCount: 4
 
-# ---- Truy cập ----
+ha:
+  # soft = ưu tiên tách pod theo node, thiếu node vẫn chạy
+  # hard = bắt buộc tách; cần ít nhất replicaCount + maxSurge node đủ tài nguyên, nếu không pod Pending
+  # none = không đặt anti-affinity
+  antiAffinity: soft
+  topologyKey: kubernetes.io/hostname   # topology.kubernetes.io/zone để tách theo zone
+
+updateStrategy:                 # rolling update; không được cùng bằng 0
+  maxUnavailable: 1             # 4 replica: luôn còn >= 3 pod phục vụ khi update
+  maxSurge: 1
+
+podDisruptionBudget:
+  enabled: true                 # chỉ render khi replicaCount > 1
+  minAvailable: 2               # phải < replicaCount; drain node vẫn giữ >= 2 pod
+
+# -----------------------------------------------------------------------------
+# Truy cập
+# -----------------------------------------------------------------------------
+publicUrl: "http://10.29.19.56:32380"   # địa chỉ người dùng mở; redirect OIDC + cookie Secure (https:// → bật)
+
 service:
-  type: NodePort              # NodePort | ClusterIP
+  type: NodePort                # NodePort | ClusterIP
   port: 8080
-  nodePort: 32380             # chỉ dùng khi NodePort; rỗng = để K8s tự chọn
+  nodePort: 32380               # 30000-32767; publicUrl phải dùng cổng này
   externalTrafficPolicy: Cluster
   annotations: {}
 
 ingress:
   enabled: false
   className: nginx
-  host: ""                    # REQUIRED khi enabled
-  tls: []                     # [{secretName: notebook-tls, hosts: [...]}]
-  annotations: {}
+  host: ""                      # bắt buộc khi enabled
+  tls: []                       # [{secretName: notebook-tls, hosts: [...]}]; khi có thì publicUrl phải https://
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "120"
+    nginx.ingress.kubernetes.io/proxy-body-size: "20m"   # import .ipynb tối đa 16Mi
 
-publicUrl: ""                 # REQUIRED. URL người dùng mở, vd http://10.29.19.56:32380
-                              # dùng cho redirect OIDC và cờ cookie Secure (https:// → Secure)
+# -----------------------------------------------------------------------------
+# Secret (vận hành tạo trước trên Dashboard; chart chỉ tham chiếu)
+# -----------------------------------------------------------------------------
+existingSecret: notebook-secrets
+secretKeys:                     # tên key trong existingSecret
+  dbPassword: db-password                         # luôn cần
+  authEncryptionKey: auth-encryption-key          # mode no-oidc / ldap
+  oidcClientSecret: oidc-client-secret            # mode oidc + serviceAccount.enabled
+  ldapManagerPassword: ldap-manager-password      # mode ldap + userSearchFilter
+  ldapTruststore: ldap-truststore                 # mode ldap + trustStore.enabled
+  ldapTruststorePassword: ldap-truststore-password  # mode ldap + trustStore (type khác PEM)
 
-# ---- Lưu trữ ----
+# -----------------------------------------------------------------------------
+# Lưu trữ (MariaDB)
+# -----------------------------------------------------------------------------
 mariadb:
-  host: ""                    # REQUIRED, vd 10.29.19.52
+  host: "10.29.19.52"
   port: 3306
   database: test
   username: notebook_api
   params: "useUnicode=true&characterEncoding=utf8&connectionTimeZone=UTC"
-  maxPoolSize: 10             # mỗi JVM
+  maxPoolSize: 5                # mỗi JVM; tối đa (4+1 pod) × 2 JVM × 5 = 50 kết nối (MariaDB dùng chung với hệ thống khác)
 
-# ---- Kyuubi ----
+# -----------------------------------------------------------------------------
+# Kyuubi
+# -----------------------------------------------------------------------------
 kyuubi:
-  restUrl: ""                 # REQUIRED, vd http://kyuubi-rest.kyuubi.svc.cluster.local:10099
+  restUrl: "http://kyuubi-rest.kyuubi.svc.cluster.local:10099"
   connectTimeout: 10s
   requestTimeout: 60s
-  sessionOpenTimeout: 10m
-  idleSessionTimeout: 30m
+  idleSessionTimeout: 30m       # session Kyuubi rảnh quá thời gian này thì đóng; 0s = tắt
+  idleReaperIntervalMs: 300000  # chu kỳ quét session rảnh
   pinToInstance: true
-  allowedSessionConfigKeys:
+  allowedSessionConfigKeys:     # cấu hình Spark người dùng được phép đặt
     - spark.executor.memory
     - spark.executor.cores
     - spark.sql.shuffle.partitions
-  # KHÔNG có sessionConfigs.kyuubi.engine.spark.output.mode: giữ AUTO (plan Q7). Render lỗi nếu có.
-  extraSessionConfigs: {}
+  extraSessionConfigs: {}       # luôn gửi khi mở session; KHÔNG đặt kyuubi.engine.spark.output.mode (render lỗi)
 
-# ---- Xác thực ----
+# -----------------------------------------------------------------------------
+# Xác thực: chỉ dùng MỘT mode. Khối của mode khác bị bỏ qua.
+# -----------------------------------------------------------------------------
 auth:
-  mode: oidc                  # REQUIRED: oidc | no-oidc | ldap
-  admins: []                  # username được coi là admin
-  allowUnverified: false      # chỉ playground khi Kyuubi authentication=NONE
+  mode: oidc                    # oidc | no-oidc | ldap
+  admins: []                    # username được coi là admin
+  allowUnverified: false        # chỉ playground khi Kyuubi authentication=NONE
 
-  oidc:                       # dùng khi mode=oidc
-    issuer: ""                # REQUIRED khi oidc, phải khớp issuer bên Kyuubi
-    clientId: kyuubi-notebook # client public cho SPA (PKCE)
+  oidc:
+    issuer: "https://10.29.19.56:32004/realms/lakehouse"   # phải khớp issuer bên Kyuubi
+    clientId: kyuubi-notebook   # client PUBLIC cho SPA (PKCE)
     scopes: [openid, profile]
     usernameClaim: preferred_username
     cacheTtl: 60s
-    serviceAccount:           # proxy user khi username ≠ ranger_username (plan §2.2 bước 4b)
-      enabled: false          # bật sau khi P5.7 đạt
-      clientId: notebook-api  # client confidential; secret ở key oidc-client-secret
+    serviceAccount:             # proxy user khi app_users.ranger_username ≠ username
+      enabled: false            # bật sau khi kiểm P5.7 trên Kyuubi
+      clientId: notebook-api    # client CONFIDENTIAL; secret ở secretKeys.oidcClientSecret
 
-  session:                    # dùng khi mode=no-oidc | ldap
+  session:                      # mode no-oidc / ldap
     ttl: 8h
     recheck: 10m
 
-  ldap:                       # dùng khi mode=ldap
-    url: ""                   # REQUIRED khi ldap
-    startTls: false
+  ldap:                         # mode ldap
+    url: ""
+    startTls: false             # bắt buộc true với ldap://; phải false với ldaps://
     baseDn: ""
-    userDnPattern: ""         # đúng MỘT trong userDnPattern / userSearchFilter
+    userDnPattern: ""           # đúng MỘT trong userDnPattern / userSearchFilter
     userSearchBase: ou=people
     userSearchFilter: ""
-    usernameAttribute: uid
-    managerDn: ""             # bắt buộc khi dùng userSearchFilter; password ở key ldap-manager-password
+    usernameAttribute: uid      # AD: sAMAccountName
+    managerDn: ""
     groupSearchBase: ou=groups
     groupMemberAttribute: member
     adminGroup: ""
     connectTimeout: 5s
     readTimeout: 10s
     trustStore:
-      enabled: false          # true → mount key ldap-truststore của existingSecret
-      type: PKCS12            # PKCS12 | JKS | PEM
+      enabled: false
+      type: PKCS12              # PKCS12 | JKS | PEM
 
-# ---- Giới hạn ứng dụng ----
+# -----------------------------------------------------------------------------
+# Giới hạn ứng dụng
+# -----------------------------------------------------------------------------
 notebook:
   maxCells: 500
+  pageSize: 200                 # số notebook tối đa mỗi trang danh sách
   cellSourceMaxSize: 1Mi
   documentMaxSize: 16Mi
   importMaxSize: 16Mi
@@ -103,18 +149,27 @@ notebook:
   eventsPoolSize: 16
   eventsMaxWait: 10s
 
-# ---- Runtime ----
-jvm:
+# -----------------------------------------------------------------------------
+# Runtime pod
+# -----------------------------------------------------------------------------
+jvm:                            # 2 JVM chung 1 container: tổng ≈ 70% limit, phần còn lại cho nginx + metaspace
   notebookService: "-XX:MaxRAMPercentage=35 -XX:+ExitOnOutOfMemoryError"
   executionService: "-XX:MaxRAMPercentage=35 -XX:+ExitOnOutOfMemoryError"
-  # 2 JVM chung 1 container: tổng ≈ 70% limit, phần còn lại cho nginx + metaspace
 
 resources:
   requests: { cpu: 500m, memory: 1Gi }
   limits:   { cpu: "2",  memory: 2Gi }
 
-logLevel: INFO                # root logger cả 2 JVM
-extraEnv: []                  # [{name: X, value: Y}] cho trường hợp đặc biệt
+logLevel: INFO
+extraEnv: []                    # [{name: X, value: Y}]
+
+probes:                         # exec /app/healthcheck.sh (kiểm cả 2 JVM + nginx)
+  startup:   { periodSeconds: 5,  failureThreshold: 60 }   # tối đa 5 phút cho Flyway + 2 JVM
+  readiness: { periodSeconds: 5,  failureThreshold: 3 }
+  liveness:  { periodSeconds: 10, failureThreshold: 3 }
+
+terminationGracePeriodSeconds: 40   # > preStopSleepSeconds + long-poll (eventsMaxWait) + thời gian dừng JVM
+preStopSleepSeconds: 5              # chờ Service rút endpoint trước khi nginx dừng
 
 podSecurityContext:
   runAsNonRoot: true
@@ -128,19 +183,15 @@ securityContext:
 
 nodeSelector: {}
 tolerations: []
-affinity: {}                  # rỗng → chart tự thêm podAntiAffinity "preferred" theo hostname
+affinity: {}                    # khác rỗng thì GHI ĐÈ hoàn toàn ha.antiAffinity
 topologySpreadConstraints: []
 podAnnotations: {}
 podLabels: {}
 
-podDisruptionBudget:
-  enabled: true               # chỉ render khi replicaCount > 1
-  minAvailable: 1
-
 networkPolicy:
   enabled: false
-  ingressFrom: []             # [{namespaceSelector: …}] nguồn được vào cổng 8080; rỗng = mọi nơi
-  egress:                     # chỉ áp khi enabled
+  ingressFrom: []               # nguồn được vào cổng 8080; rỗng = mọi nơi
+  egress:
     mariadb: { cidr: 10.29.19.52/32, port: 3306 }
     kyuubi:  { namespace: kyuubi, podLabels: { app.kubernetes.io/name: kyuubi }, port: 10099 }
     keycloak: { cidr: 10.29.19.56/32, port: 32004 }

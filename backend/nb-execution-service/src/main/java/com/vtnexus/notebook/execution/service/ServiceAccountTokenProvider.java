@@ -79,7 +79,7 @@ public class ServiceAccountTokenProvider {
             throw nae;
         } catch (Exception ex) {
             log.warn("Failed to request service account token from {}: {}", tokenUrl, ex.getMessage());
-            throw new NotebookApiException("PROXY_UNAVAILABLE", "Keycloak service account authentication failed: " + ex.getMessage(), HttpStatus.SERVICE_UNAVAILABLE);
+            throw new NotebookApiException("PROXY_UNAVAILABLE", "Keycloak service account authentication failed", HttpStatus.SERVICE_UNAVAILABLE);
         }
     }
 }

@@ -102,7 +102,8 @@ class ProxyUserWireMockTest {
         com.vtnexus.notebook.common.config.KyuubiProperties kyuubiProps = new com.vtnexus.notebook.common.config.KyuubiProperties();
         kyuubiProps.setRestUrl(wireMockServer.baseUrl());
         kyuubiProps.setPinToInstance(true);
-        kyuubiProps.setAllowedSessionConfigKeys(List.of("hive.server2.proxy.user", "spark.executor.memory"));
+        // Đúng như cấu hình thật: allowlist KHÔNG có hive.server2.proxy.user (khóa do hệ thống tự đặt)
+        kyuubiProps.setAllowedSessionConfigKeys(List.of("spark.executor.memory"));
         kyuubiRestClient = new KyuubiRestClient(
                 kyuubiProps,
                 new RestTemplateBuilder(),
@@ -152,6 +153,29 @@ class ProxyUserWireMockTest {
         // Không gửi hive.server2.proxy.user
         wireMockServer.verify(postRequestedFor(urlEqualTo("/api/v1/sessions"))
                 .withHeader("Authorization", equalTo("Bearer alice-user-token"))
+                .withRequestBody(notMatching(".*hive\\.server2\\.proxy\\.user.*")));
+    }
+
+    @Test
+    void testUserCannotSetProxyUserThroughSessionConfigs() {
+        when(documentServiceClient.getRangerUsername("alice")).thenReturn("alice");
+        when(sessionRepository.findFirstByNotebookIdAndUserIdAndStatusInOrderByCreatedAtDesc(any(), any(), any()))
+                .thenReturn(Optional.empty());
+
+        wireMockServer.stubFor(post(urlEqualTo("/api/v1/sessions"))
+                .willReturn(aResponse()
+                        .withHeader("Content-Type", "application/json")
+                        .withBody("{\"identifier\":\"kyuubi-session-alice\",\"kyuubiInstance\":\"kyuubi-1:10099\"}")));
+
+        Map<String, String> configs = new HashMap<>();
+        configs.put("hive.server2.proxy.user", "admin");
+        configs.put("spark.executor.memory", "2g");
+        ExecutionService.SessionCreationResult res = executionService.getOrCreateSession(
+                "nb-1", "alice", "Bearer alice-user-token", configs);
+
+        assertThat(res.warnings()).anyMatch(w -> w.contains("hive.server2.proxy.user"));
+        wireMockServer.verify(postRequestedFor(urlEqualTo("/api/v1/sessions"))
+                .withRequestBody(containing("\"spark.executor.memory\":\"2g\""))
                 .withRequestBody(notMatching(".*hive\\.server2\\.proxy\\.user.*")));
     }
 

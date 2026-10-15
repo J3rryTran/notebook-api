@@ -65,7 +65,7 @@ Convert size string (e.g. 1Mi, 16Mi, 1Gi, 500Ki or raw bytes) to integer bytes.
 {{- end }}
 
 {{/*
-Validate values during rendering (13 rules from chart-design.md §5)
+Validate values during rendering (21 rules from chart-design.md §5)
 */}}
 {{- define "notebook.validate" -}}
 {{- if ne .Values.topology "allInOne" }}
@@ -111,12 +111,30 @@ Validate values during rendering (13 rules from chart-design.md §5)
   {{- if and (hasPrefix "ldap://" .Values.auth.ldap.url) (not .Values.auth.ldap.startTls) }}
     {{- fail "plain ldap:// requires auth.ldap.startTls=true" }}
   {{- end }}
+  {{- if and (hasPrefix "ldaps://" .Values.auth.ldap.url) .Values.auth.ldap.startTls }}
+    {{- fail "auth.ldap.startTls must be false with ldaps:// (already TLS)" }}
+  {{- end }}
+  {{- if not .Values.auth.ldap.usernameAttribute }}
+    {{- fail "auth.ldap.usernameAttribute is required for mode=ldap" }}
+  {{- end }}
 {{- end }}
 
 {{- if .Values.kyuubi.extraSessionConfigs }}
   {{- if hasKey .Values.kyuubi.extraSessionConfigs "kyuubi.engine.spark.output.mode" }}
     {{- fail "output.mode must stay at Kyuubi default (AUTO)" }}
   {{- end }}
+{{- end }}
+
+{{- if not (has .Values.ha.antiAffinity (list "soft" "hard" "none")) }}
+  {{- fail "ha.antiAffinity must be soft, hard or none" }}
+{{- end }}
+
+{{- if and .Values.podDisruptionBudget.enabled (gt (int .Values.replicaCount) 1) (ge (int .Values.podDisruptionBudget.minAvailable) (int .Values.replicaCount)) }}
+  {{- fail (printf "podDisruptionBudget.minAvailable (%v) must be < replicaCount (%v), otherwise node drain is blocked" .Values.podDisruptionBudget.minAvailable .Values.replicaCount) }}
+{{- end }}
+
+{{- if and (eq (toString .Values.updateStrategy.maxUnavailable) "0") (eq (toString .Values.updateStrategy.maxSurge) "0") }}
+  {{- fail "updateStrategy.maxUnavailable and maxSurge cannot both be 0" }}
 {{- end }}
 
 {{- if and .Values.ingress.enabled (not .Values.ingress.host) }}

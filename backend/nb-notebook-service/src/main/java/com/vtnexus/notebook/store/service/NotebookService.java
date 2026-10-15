@@ -144,7 +144,7 @@ public class NotebookService {
         } catch (NotebookApiException nae) {
             throw nae;
         } catch (Exception e) {
-            throw new NotebookApiException("INTERNAL_ERROR", "Failed to serialize notebook document: " + e.getMessage(), HttpStatus.INTERNAL_SERVER_ERROR);
+            throw new NotebookApiException("INTERNAL_ERROR", "Failed to serialize notebook document", HttpStatus.INTERNAL_SERVER_ERROR);
         }
 
         Notebook notebook = Notebook.builder()
@@ -207,7 +207,7 @@ public class NotebookService {
         } catch (NotebookApiException nae) {
             throw nae;
         } catch (Exception e) {
-            throw new NotebookApiException("INVALID_DOCUMENT", "Failed to update notebook document: " + e.getMessage(), HttpStatus.BAD_REQUEST);
+            throw new NotebookApiException("INVALID_DOCUMENT", "Failed to update notebook document", HttpStatus.BAD_REQUEST);
         }
 
         notebook.setCurrentRevision(notebook.getCurrentRevision() + 1);
@@ -311,7 +311,7 @@ public class NotebookService {
         } catch (NotebookApiException e) {
             throw e;
         } catch (Exception e) {
-            throw new NotebookApiException("INTERNAL_ERROR", "Failed to create notebook revision snapshot: " + e.getMessage(), HttpStatus.INTERNAL_SERVER_ERROR);
+            throw new NotebookApiException("INTERNAL_ERROR", "Failed to create notebook revision snapshot", HttpStatus.INTERNAL_SERVER_ERROR);
         }
     }
 
@@ -382,7 +382,7 @@ public class NotebookService {
         try {
             doc = objectMapper.readValue(documentJson, NotebookDocument.class);
         } catch (Exception e) {
-            throw new NotebookApiException("UNSUPPORTED_FORMAT", "Failed to parse document JSON: " + e.getMessage(), HttpStatus.CONFLICT);
+            throw new NotebookApiException("UNSUPPORTED_FORMAT", "Failed to parse document JSON", HttpStatus.CONFLICT);
         }
         if (doc.getSchemaVersion() != 1) {
             throw new NotebookApiException("UNSUPPORTED_FORMAT", "Unsupported schemaVersion: " + doc.getSchemaVersion() + ". Expected 1.", HttpStatus.CONFLICT);

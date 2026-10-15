@@ -7,6 +7,27 @@
       "type": "string",
       "enum": ["allInOne", "split"]
     },
+    "ha": {
+      "type": "object",
+      "properties": {
+        "antiAffinity": { "type": "string", "enum": ["soft", "hard", "none"] },
+        "topologyKey": { "type": "string", "minLength": 1 }
+      }
+    },
+    "updateStrategy": {
+      "type": "object",
+      "properties": {
+        "maxUnavailable": { "type": ["integer", "string"] },
+        "maxSurge": { "type": ["integer", "string"] }
+      }
+    },
+    "podDisruptionBudget": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "minAvailable": { "type": ["integer", "string"] }
+      }
+    },
     "replicaCount": {
       "type": "integer",
       "minimum": 1
@@ -117,13 +138,13 @@
           "type": "string",
           "pattern": "^[0-9]+(ms|s|m|h|d)$"
         },
-        "sessionOpenTimeout": {
-          "type": "string",
-          "pattern": "^[0-9]+(ms|s|m|h|d)$"
-        },
         "idleSessionTimeout": {
           "type": "string",
           "pattern": "^[0-9]+(ms|s|m|h|d)$"
+        },
+        "idleReaperIntervalMs": {
+          "type": "integer",
+          "minimum": 10000
         }
       }
     },

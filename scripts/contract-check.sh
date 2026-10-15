@@ -28,8 +28,12 @@ echo -e "${BLUE}=== [X1] Static Contract Check: Helm ConfigMap vs Code Propertie
 TMP_DIR=$(mktemp -d)
 trap 'rm -rf "${TMP_DIR}"' EXIT
 
-docker run --rm -v "${ROOT_DIR}/notebook-helm":/c alpine/helm:3.14.4 template t /c -f /c/ci/oidc-values.yaml > "${TMP_DIR}/oidc.yaml"
-docker run --rm -v "${ROOT_DIR}/notebook-helm":/c alpine/helm:3.14.4 template t /c -f /c/ci/ldap-values.yaml > "${TMP_DIR}/ldap.yaml"
+# Render từ values.yaml thật, cộng một lần render mode ldap (bằng --set) để có đủ khóa của mọi mode
+docker run --rm -v "${ROOT_DIR}/notebook-helm":/c alpine/helm:3.14.4 template t /c --set auth.oidc.serviceAccount.enabled=true > "${TMP_DIR}/oidc.yaml"
+docker run --rm -v "${ROOT_DIR}/notebook-helm":/c alpine/helm:3.14.4 template t /c \
+  --set auth.mode=ldap --set auth.ldap.url=ldaps://ldap.example.invalid:636 \
+  --set 'auth.ldap.userSearchFilter=(uid={0})' --set 'auth.ldap.managerDn=cn=svc\,dc=example\,dc=invalid' \
+  --set auth.ldap.trustStore.enabled=true > "${TMP_DIR}/ldap.yaml"
 
 # Danh sách khóa chính trong ConfigMap theo Contract 2
 EXPECTED_CONFIG_KEYS=(
@@ -53,6 +57,7 @@ EXPECTED_CONFIG_KEYS=(
   "notebook.auth.ldap.url"
   "notebook.auth.ldap.start-tls"
   "notebook.auth.ldap.base-dn"
+  "notebook.auth.ldap.username-attribute"
   "notebook.auth.ldap.group-search-base"
   "notebook.auth.ldap.group-member-attribute"
   "notebook.auth.ldap.admin-group"
@@ -70,21 +75,30 @@ EXPECTED_CONFIG_KEYS=(
   "kyuubi.rest-url"
   "kyuubi.connect-timeout"
   "kyuubi.request-timeout"
-  "kyuubi.session-open-timeout"
   "kyuubi.idle-session-timeout"
+  "kyuubi.idle-reaper-interval"
   "kyuubi.pin-to-instance"
   "kyuubi.allowed-session-config-keys"
 )
 
-# Kiểm tra các khóa này có được định nghĩa và đọc trong code / application.yml
+# Mỗi khóa phải (1) có mặt trong ConfigMap render của ít nhất một mode, và (2) với notebook.* / kyuubi.*:
+# có field tương ứng (camelCase của phần cuối) trong các lớp @ConfigurationProperties. Khóa spring.* /
+# server.* / logging.* thuộc Spring Boot nên chỉ kiểm (1).
+PROPS_SRC="${ROOT_DIR}/backend/nb-common/src/main/java/com/vtnexus/notebook/common"
 MISSING_KEYS=0
 for key in "${EXPECTED_CONFIG_KEYS[@]}"; do
-  # Chuyển key dạng a.b.c sang pattern tìm kiếm trong Java / yml
-  prefix="${key%%.*}"
-  if ! grep -rq "${key}" "${ROOT_DIR}/backend" && \
-     ! grep -rq "${prefix}" "${ROOT_DIR}/backend/nb-common/src/main/java" && \
-     ! grep -rq "${prefix}" "${ROOT_DIR}/backend/nb-notebook-service/src/main/resources/application.yml"; then
-    echo -e "${RED}[X1 FAIL] Key ${key} không tìm thấy trong backend code/config!${NC}"
+  leaf="${key##*.}"
+  if ! grep -qE "^[[:space:]]+${leaf}:" "${TMP_DIR}/oidc.yaml" "${TMP_DIR}/ldap.yaml"; then
+    echo -e "${RED}[X1 FAIL] Key ${key} không có trong ConfigMap render từ chart${NC}"
+    MISSING_KEYS=$((MISSING_KEYS + 1))
+    continue
+  fi
+  case "${key}" in
+    spring.*|server.*|logging.*) continue ;;
+  esac
+  camel=$(echo "${leaf}" | sed -E 's/-([a-z])/\U\1/g')
+  if ! grep -rqE "private [A-Za-z<>,. ]+ ${camel}( |;|=)" "${PROPS_SRC}/config" "${PROPS_SRC}/auth/AuthProperties.java"; then
+    echo -e "${RED}[X1 FAIL] Key ${key}: không có field '${camel}' trong @ConfigurationProperties${NC}"
     MISSING_KEYS=$((MISSING_KEYS + 1))
   fi
 done
@@ -111,6 +125,7 @@ cleanup_docker() {
   echo "Cleaning up containers and network..."
   docker rm -f nb-mock-mariadb-$$ nb-mock-wiremock-$$ nb-app-test-$$ > /dev/null 2>&1 || true
   docker network rm "${TEST_NET}" > /dev/null 2>&1 || true
+  rm -rf "${TMP_DIR}"
 }
 trap cleanup_docker EXIT
 
@@ -135,63 +150,43 @@ for i in $(seq 1 30); do
   sleep 1
 done
 
+WIREMOCK_READY=false
+for i in $(seq 1 60); do
+  if docker exec "nb-mock-wiremock-$$" curl -sf http://localhost:8080/__admin/mappings > /dev/null 2>&1; then
+    WIREMOCK_READY=true
+    break
+  fi
+  sleep 1
+done
+if [ "${WIREMOCK_READY}" != true ]; then
+  echo -e "${RED}[X2 FAIL] WireMock không sẵn sàng sau 60s${NC}"
+  exit 1
+fi
+
 # Cấu hình stub WireMock cho /api/v1/ping
 docker exec "nb-mock-wiremock-$$" curl -s -X POST http://localhost:8080/__admin/mappings \
   -H "Content-Type: application/json" \
   -d '{"request":{"method":"GET","url":"/api/v1/ping"},"response":{"status":200,"body":"PONG"}}' > /dev/null
 
-# Chuẩn bị file application.yaml từ chart template
+# application.yaml lấy từ ConfigMap mà CHART render (không viết tay), chỉ đổi địa chỉ sang container giả lập
 APP_CFG="${TMP_DIR}/application.yaml"
-cat <<EOF > "${APP_CFG}"
-spring:
-  datasource:
-    url: jdbc:mariadb://nb-mock-mariadb-$$:3306/test?useUnicode=true&characterEncoding=utf8&connectionTimeZone=UTC
-    username: "notebook_api"
-    hikari:
-      maximum-pool-size: 5
-server:
-  forward-headers-strategy: native
-logging:
-  level:
-    root: INFO
-notebook:
-  public-url: "http://127.0.0.1:8080"
-  admins: []
-  auth:
-    mode: oidc
-    allow-unverified: true
-    username-claim: "preferred_username"
-    cache-ttl: 60s
-    oidc:
-      issuer: "http://nb-mock-wiremock-$$:8080/realms/lakehouse"
-      client-id: "kyuubi-notebook"
-      scopes: ["openid","profile"]
-  max:
-    cells: 500
-    page-size: 200
-  cell:
-    source:
-      max-size: 1048576
-  document:
-    max-size: 16777216
-  import:
-    max-size: 16777216
-  revision:
-    max-per-notebook: 100
-  results:
-    max-rows: 1000
-  events:
-    pool-size: 16
-    max-wait: 10s
-kyuubi:
-  rest-url: "http://nb-mock-wiremock-$$:8080"
-  connect-timeout: 10s
-  request-timeout: 60s
-  session-open-timeout: 10m
-  idle-session-timeout: 30m
-  pin-to-instance: true
-  allowed-session-config-keys: ["spark.executor.memory"]
-EOF
+docker run --rm -v "${ROOT_DIR}/notebook-helm":/c alpine/helm:3.14.4 template t /c \
+  --set auth.mode=oidc \
+  --set mariadb.host="nb-mock-mariadb-$$" \
+  --set mariadb.username=notebook_api \
+  --set kyuubi.restUrl="http://nb-mock-wiremock-$$:8080" \
+  --set auth.oidc.issuer="http://nb-mock-wiremock-$$:8080/realms/lakehouse" \
+  --set auth.allowUnverified=true \
+  --set publicUrl="http://127.0.0.1:32380" \
+  --show-only templates/configmap.yaml > "${TMP_DIR}/configmap.yaml"
+awk '/^  application.yaml: \|/{f=1; next} f && /^    /{sub(/^    /, ""); print; next} f && /^[[:space:]]*$/{print; next} f{f=0}' \
+  "${TMP_DIR}/configmap.yaml" > "${APP_CFG}"
+if ! grep -q "nb-mock-mariadb-$$" "${APP_CFG}"; then
+  echo -e "${RED}[X2 FAIL] Không trích được application.yaml từ ConfigMap render${NC}"
+  cat "${TMP_DIR}/configmap.yaml"
+  exit 1
+fi
+chmod 0644 "${APP_CFG}"
 
 echo "3. Khởi chạy Notebook Image theo đúng securityContext pod K8s..."
 docker run -d --name "nb-app-test-$$" --network "${TEST_NET}" \

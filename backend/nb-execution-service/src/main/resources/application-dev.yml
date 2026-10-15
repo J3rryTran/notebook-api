@@ -8,4 +8,4 @@ notebook:
   internal-token: dev-internal-token-secret-12345
   notebook-service-url: "http://localhost:8080"
   auth:
-    allowUnverified: true
+    allow-unverified: true

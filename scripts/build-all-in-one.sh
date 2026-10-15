@@ -68,7 +68,7 @@ if [ "${IS_DIRTY}" = true ]; then
   TAG_VERSION="${VERSION}-${GIT_SHORT_REV}"
 fi
 
-IMAGE_REPO="j3rrytran/notebook"
+IMAGE_REPO="${IMAGE_REPO:-docker.io/j3rrytran/notebook}"   # khớp image.repository trong notebook-helm/values.yaml
 IMAGE_FULL="${IMAGE_REPO}:${TAG_VERSION}"
 
 echo -e "${GREEN}[P0 PASS] Version: ${VERSION}, Image Tag: ${IMAGE_FULL}, Git SHA: ${GIT_SHORT_REV}${NC}"
@@ -88,7 +88,9 @@ docker run --rm \
     exit 1
   }
 
-TESTS_RUN=$(grep -E "Tests run: [0-9]+" "${ROOT_DIR}/dist/mvn-verify.log" | tail -n 1 || echo "Tests run: unknown")
+# Cộng các dòng tổng kết của surefire (unit) và failsafe (IT); bỏ dòng chi tiết từng class (có "in <class>")
+TESTS_RUN=$(grep -E "Tests run: [0-9]+, Failures: [0-9]+, Errors: [0-9]+, Skipped: [0-9]+$" "${ROOT_DIR}/dist/mvn-verify.log" \
+  | sed -E 's/.*Tests run: ([0-9]+).*/\1/' | awk '{s+=$1} END {printf "Tests run: %d (unit + IT)", s}')
 echo -e "${GREEN}[P1 PASS] Backend build & test thành công. (${TESTS_RUN})${NC}"
 
 echo -e "${BLUE}=== P2: Kiểm tra Fat JARs và tạo Checksums ===${NC}"
@@ -145,7 +147,7 @@ bash "${ROOT_DIR}/scripts/helm-check.sh" > "${ROOT_DIR}/dist/helm-check.log" 2>&
   tail -n 20 "${ROOT_DIR}/dist/helm-check.log"
   exit 1
 }
-echo -e "${GREEN}[P4 PASS] Helm checks (lint + 3 mode templates + 13 validation error cases) đạt.${NC}"
+echo -e "${GREEN}[P4 PASS] Helm checks (lint + values.yaml + mode khác qua --set + 21 validation error cases) đạt.${NC}"
 
 echo -e "${BLUE}=== P5: Kiểm tra hợp đồng tĩnh (X1) ===${NC}"
 bash "${ROOT_DIR}/scripts/contract-check.sh" --static-only > "${ROOT_DIR}/dist/contract-x1.log" 2>&1 || {

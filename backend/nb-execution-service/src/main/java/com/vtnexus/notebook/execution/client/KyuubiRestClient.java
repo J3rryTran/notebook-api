@@ -28,6 +28,8 @@ import java.util.Map;
 @Component
 public class KyuubiRestClient {
 
+    public static final String PROXY_USER_KEY = "hive.server2.proxy.user";
+
     private static final Logger log = LoggerFactory.getLogger(KyuubiRestClient.class);
 
     private final RestTemplate restTemplate;
@@ -79,6 +81,14 @@ public class KyuubiRestClient {
     }
 
     public Map<String, String> openSession(String userAuthHeader, Map<String, String> extraConfigs) {
+        return openSession(userAuthHeader, extraConfigs, null);
+    }
+
+    /**
+     * @param proxyUser khi khác null: gửi {@code hive.server2.proxy.user}. Khóa này do hệ thống đặt (B4),
+     *                  không đi qua allowlist dành cho cấu hình người dùng, và ghi đè mọi giá trị người dùng gửi.
+     */
+    public Map<String, String> openSession(String userAuthHeader, Map<String, String> extraConfigs, String proxyUser) {
         String auth = resolveAuth(userAuthHeader);
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
@@ -91,6 +101,10 @@ public class KyuubiRestClient {
                     configs.put(e.getKey(), e.getValue());
                 }
             }
+        }
+        configs.remove(PROXY_USER_KEY);
+        if (proxyUser != null && !proxyUser.isBlank()) {
+            configs.put(PROXY_USER_KEY, proxyUser);
         }
 
 

@@ -1,44 +1,66 @@
-CHỨC MỪNG: Notebook Helm Chart đã được render thành công!
+Notebook {{ .Chart.AppVersion }} (chart {{ .Chart.Version }}, contract 2), auth.mode={{ .Values.auth.mode }}
 
-1. Checklist Secret `{{ .Values.existingSecret }}` cần có các keys:
-   - db-password (bắt buộc cho kết nối MariaDB)
+[Secret] `{{ .Values.existingSecret }}` cần có các keys:
+   - {{ .Values.secretKeys.dbPassword }} (bắt buộc cho kết nối MariaDB)
 {{- if eq .Values.auth.mode "oidc" }}
 {{- if .Values.auth.oidc.serviceAccount.enabled }}
-   - oidc-client-secret (bắt buộc khi auth.oidc.serviceAccount.enabled=true)
+   - {{ .Values.secretKeys.oidcClientSecret }} (bắt buộc khi auth.oidc.serviceAccount.enabled=true)
 {{- end }}
 {{- else }}
-   - auth-encryption-key (bắt buộc cho mode no-oidc và ldap: 32 bytes base64)
+   - {{ .Values.secretKeys.authEncryptionKey }} (bắt buộc cho mode no-oidc và ldap: 32 bytes base64)
 {{- if eq .Values.auth.mode "ldap" }}
 {{- if .Values.auth.ldap.userSearchFilter }}
-   - ldap-manager-password (bắt buộc khi dùng userSearchFilter)
+   - {{ .Values.secretKeys.ldapManagerPassword }} (bắt buộc khi dùng userSearchFilter)
 {{- end }}
 {{- if .Values.auth.ldap.trustStore.enabled }}
-   - ldap-truststore (file nhị phân truststore mount vào container)
+   - {{ .Values.secretKeys.ldapTruststore }} (file nhị phân truststore mount vào container)
 {{- if ne .Values.auth.ldap.trustStore.type "PEM" }}
-   - ldap-truststore-password (bắt buộc khi type không phải PEM)
+   - {{ .Values.secretKeys.ldapTruststorePassword }} (bắt buộc khi type không phải PEM)
 {{- end }}
 {{- end }}
 {{- end }}
 {{- end }}
 
-2. MariaDB:
-   User `{{ .Values.mariadb.username }}` phải có quyền trên database `{{ .Values.mariadb.database }}.*` (xem backend/sql/000_user.sql).
+[MariaDB]
+   User `{{ .Values.mariadb.username }}` cần quyền SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, INDEX, DROP,
+   REFERENCES trên `{{ .Values.mariadb.database }}.*` (Flyway tạo/sửa bảng lúc khởi động).
 
 {{- if eq .Values.auth.mode "oidc" }}
-3. Keycloak OIDC Client:
-   - Client `{{ .Values.auth.oidc.clientId }}` phải là PUBLIC, Access Type = Public.
-   - Valid redirect URIs phải có: `{{ .Values.publicUrl }}/auth/callback`
+
+[Keycloak] (realm của issuer {{ .Values.auth.oidc.issuer }}):
+   - Client `{{ .Values.auth.oidc.clientId }}`: PUBLIC (Client authentication = Off), Standard flow + PKCE S256.
+   - Valid redirect URIs: `{{ .Values.publicUrl }}/auth/callback`
    - Valid post logout redirect URIs: `{{ .Values.publicUrl }}/*`
    - Web origins: `{{ .Values.publicUrl }}`
-   - Token Mapper: audience mapper `kyuubi`.
-   - Lưu ý: Nếu Keycloak chạy HTTPS với chứng chỉ tự ký (self-signed), người dùng cần truy cập trực tiếp URL Keycloak trên trình duyệt và chấp nhận chứng chỉ một lần.
+   - Audience mapper thêm `kyuubi` vào `aud` (Kyuubi kiểm aud=kyuubi).
+   - Keycloak HTTPS chứng chỉ tự ký: mỗi người dùng mở URL Keycloak và chấp nhận chứng chỉ một lần.
 {{- if .Values.auth.oidc.serviceAccount.enabled }}
-4. Kyuubi Proxy User:
-   - Kyuubi phải cấu hình `hadoop.proxyuser.{{ .Values.auth.oidc.serviceAccount.clientId }}.users` và `hosts`.
+
+   Proxy user (người dùng có app_users.ranger_username khác username):
+   - Client `{{ .Values.auth.oidc.serviceAccount.clientId }}`: CONFIDENTIAL, bật Service accounts roles,
+     audience mapper `kyuubi`; secret đặt vào key `{{ .Values.secretKeys.oidcClientSecret }}`.
+   - Kyuubi thấy user của service account là `preferred_username` trong token client_credentials
+     (Keycloak mặc định: `service-account-{{ .Values.auth.oidc.serviceAccount.clientId }}`). Thêm vào
+     kyuubi-defaults.conf của Kyuubi server rồi restart Kyuubi:
+       hadoop.proxyuser.service-account-{{ .Values.auth.oidc.serviceAccount.clientId }}.users=*
+       hadoop.proxyuser.service-account-{{ .Values.auth.oidc.serviceAccount.clientId }}.hosts=*
+     Kiểm tên thật bằng P5.7 (plan/mariadb-auth-plan.md) trước khi ghi.
 {{- end }}
 {{- end }}
 
-5. Kiểm tra sau khi deploy:
+[Kyuubi] Session rảnh quá {{ .Values.kyuubi.idleSessionTimeout }} được đóng tự động (quét mỗi {{ div (int64 .Values.kyuubi.idleReaperIntervalMs) 1000 }}s).
+
+[HA] replicaCount={{ .Values.replicaCount }}, ha.antiAffinity={{ .Values.ha.antiAffinity }} ({{ .Values.ha.topologyKey }}), rolling maxUnavailable={{ .Values.updateStrategy.maxUnavailable }} maxSurge={{ .Values.updateStrategy.maxSurge }}
+{{- if lt (int .Values.replicaCount) 2 }}
+   CẢNH BÁO: replicaCount < 2 → không có HA.
+{{- end }}
+{{- if and (eq .Values.ha.antiAffinity "hard") (not .Values.affinity) }}
+   Cần ít nhất {{ add (int .Values.replicaCount) (int .Values.updateStrategy.maxSurge) }} node (theo {{ .Values.ha.topologyKey }}) còn đủ tài nguyên, nếu không pod sẽ Pending
+   (lúc rolling update cần thêm {{ .Values.updateStrategy.maxSurge }} pod). Ít node: đặt updateStrategy.maxUnavailable=1, maxSurge=0.
+{{- end }}
+   HA của notebook vẫn phụ thuộc MariaDB ({{ .Values.mariadb.host }}), Kyuubi và Keycloak/LDAP.
+
+[Kiểm tra sau khi deploy]
    - Dashboard -> Service `{{ include "notebook.fullname" . }}` -> External endpoints.
    - Mở giao diện: {{ .Values.publicUrl }}
    - Mở cấu hình auth: {{ .Values.publicUrl }}/api/v1/auth/config (phải trả JSON có "mode": "{{ .Values.auth.mode }}")

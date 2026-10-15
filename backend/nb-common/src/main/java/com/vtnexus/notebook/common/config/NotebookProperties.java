@@ -24,10 +24,20 @@ public class NotebookProperties {
     private MaxProperties max = new MaxProperties();
     private CellProperties cell = new CellProperties();
     private DocumentProperties document = new DocumentProperties();
+    // "import" là từ khóa Java nên field đặt tên khác; getImport()/setImport() bên dưới để Spring bind đúng
+    // khóa notebook.import.* (Lombok sinh getAnImport() thì Spring chỉ bind notebook.an-import.*).
     private ImportProperties anImport = new ImportProperties();
     private RevisionProperties revision = new RevisionProperties();
     private ResultsProperties results = new ResultsProperties();
     private EventsProperties events = new EventsProperties();
+
+    public ImportProperties getImport() {
+        return anImport;
+    }
+
+    public void setImport(ImportProperties value) {
+        this.anImport = value;
+    }
 
     @Getter
     @Setter
