@@ -71,7 +71,7 @@ tiếp tục đọc code ở mục 3–6.
 |---|---|---|---|
 | K1 | Build + test | Lệnh 1.2 | `BUILD SUCCESS`; ghi số test từng module |
 | K2 | `EnvironmentPostProcessor` được nạp thật | Tìm `META-INF/spring.factories` trong `nb-common/src/main/resources` có key `org.springframework.boot.env.EnvironmentPostProcessor=` liệt kê **cả** `AuthPropertiesValidator` và `DatasourceGuard` | Có. **Lưu ý:** file `META-INF/spring/…EnvironmentPostProcessor.imports` **không** được Spring Boot 3.3 đọc, không tính |
-| K3 | Khởi động thất bại khi cấu hình sai | Nếu có test `@SpringBootTest` với `notebook.auth.mode=abc` / thiếu `NOTEBOOK_INTERNAL_TOKEN` / URL `jdbc:postgresql:` → kỳ vọng context fail. Không có test → ghi `THIẾU TEST`. | Có test và pass |
+| K3 | Khởi động thất bại khi cấu hình sai | Nếu có test `@SpringBootTest` với `notebook.auth.mode=abc` / URL `jdbc:postgresql:` → kỳ vọng context fail. Không có test → ghi `THIẾU TEST`. | Có test và pass |
 | K4 | Không còn Postgres/H2 | `grep -rniE "postgres|h2database|jdbc:h2" backend --include=*.xml --include=*.yml --include=*.java` (bỏ `target/`) và `README.md`, `BUILD.md` | Rỗng |
 | K5 | Không còn ArgoCD và đường dẫn máy cá nhân | `grep -rniE "argocd|argo-cd|argoproj|file:///mnt" . --exclude-dir=.git --exclude-dir=target` | Rỗng (ArgoCD thuộc hệ thống khác, repo này không chứa) |
 | K6 | Không có secret cứng | `grep -rniE "password\s*[:=]\s*\S+|secret\s*[:=]|token\s*[:=]\s*\"[^$]" backend/*/src/main docker notebook-helm` | Chỉ có trong `application-dev.yml` hoặc placeholder `${…}` |
@@ -169,7 +169,7 @@ Trạng thái operation Kyuubi: `INITIALIZED, PENDING, RUNNING, FINISHED, CANCEL
 
 | # | Kiểm gì | Đạt khi |
 |---|---|---|
-| D1 | `Dockerfile`/`entrypoint.sh`: không sinh `NOTEBOOK_INTERNAL_TOKEN` ngẫu nhiên khi thiếu (phải fail); chạy non-root; dừng sạch khi SIGTERM | Đủ |
+| D1 | `Dockerfile`/`entrypoint.sh`: với `topology: allInOne`, tự sinh `NOTEBOOK_INTERNAL_TOKEN` từ `/dev/urandom` khi không được truyền (không in ra log); `/internal/**` chỉ nhận từ loopback và bị nginx chặn từ ngoài; chạy non-root; dừng sạch khi SIGTERM | Đủ |
 | D2 | Probe kiểm cả notebook-service lẫn execution-service | Có |
 | D3 | nginx: route execution trước notebook; chặn `/internal/`; đặt `X-Forwarded-Proto`; `server.forward-headers-strategy` bật phía Spring | Đủ |
 | D4 | Chart truyền đủ: `auth.mode`, `oidc.issuer/clientId/scopes/usernameClaim`, `auth.ldap.*`, `kyuubi.*`, Secret theo plan §2.7 chỉ cho mode đang chọn | Mọi key trong `values.yaml` được template dùng |

@@ -17,7 +17,7 @@ trên code `7dae13f`). Những mục này phải sửa trong vòng này, đánh 
 
 | Mã | Biên bản ghi | Thực tế | Bằng chứng |
 |---|---|---|---|
-| D1 | ĐẠT: "entrypoint dừng khi thiếu biến bắt buộc" | **Sai.** Thiếu `NOTEBOOK_INTERNAL_TOKEN` thì script **tự sinh token ngẫu nhiên** và chạy tiếp. | `docker/entrypoint.sh:7-10` |
+| D1 | ĐẠT: "entrypoint dừng khi thiếu biến bắt buộc" | Mô tả của biên bản sai (script tự sinh token, không dừng), nhưng **hành vi tự sinh là đúng** với image all-in-one (đính chính 2026-10-15, xem `chart-design.md` §4.1). Chỉ cần sửa cách sinh (dùng `/dev/urandom` 32 byte, không in ra log). | `docker/entrypoint.sh:7-10` |
 | K10 | ĐẠT: "script chạy được" | **Sai.** `build-all-in-one.sh`, `build-dist.sh`, `BUILD.md`, `DOCKER.md` đều gọi `apache-maven-3.9.11/bin/mvn`. Trong git, `lib/` của thư mục này chỉ có file license (jar bị `.gitignore` chặn), nên máy clone mới **không build được**. Máy của người nghiệm thu chạy được chỉ vì có jar cục bộ không nằm trong git. | `scripts/build-all-in-one.sh:14`, `scripts/build-dist.sh:15` |
 | K5 | MỘT PHẦN, chỉ nêu DOCKER.md | `BUILD.md:30` cũng có `file:///mnt/d/...`. | `BUILD.md:30` |
 | K9, D4 | ĐẠT | **Sai.** Khối `oidc:` trong `values.yaml` (issuer, clientId, scopes, usernameClaim) **không được template dùng**. Không có cách cấu hình `auth.ldap.*`. Secret `oidc-client-secret` khai báo nhưng không mount. Biên bản không chạy `helm template`. | `notebook-helm/templates/deployment.yaml` |
@@ -318,7 +318,7 @@ làm mới, `/me` trả user. Ghi kết quả vào biên bản nghiệm thu mụ
 
 | Mã | Ở đâu | Làm gì | Xong khi |
 |---|---|---|---|
-| C1 (D1) | `docker/entrypoint.sh:7-10` | Thiếu `NOTEBOOK_INTERNAL_TOKEN` thì `echo` lỗi và `exit 1`. Bỏ phần tự sinh token. | Chạy container không có biến → thoát mã 1 |
+| C1 (D1) | `docker/entrypoint.sh:7-10` | **Giữ** tự sinh token khi không truyền vào (đính chính 2026-10-15: hai service cùng container, giống Jupyter server ↔ kernel). Sinh `head -c 32 /dev/urandom \| base64`, không in giá trị ra log. notebook-service chỉ nhận `/internal/**` từ loopback (C18). | Container chạy không cần Secret `internal-token`; gọi `/internal/**` qua cổng 8080 → 403 |
 | C2 (K10) | `scripts/*.sh`, `BUILD.md`, `DOCKER.md` | Thêm Maven Wrapper vào `backend/` (`mvnw`, `.mvn/wrapper/maven-wrapper.properties` trỏ 3.9.9). Script gọi `backend/mvnw`. Xóa thư mục `apache-maven-3.9.11/` khỏi git (`git rm -r --cached`) và thêm vào `.gitignore`. | `git clone` mới rồi `./scripts/build-all-in-one.sh` chạy được khi có JDK 17 |
 | C3 (K5, D7) | `DOCKER.md`, `BUILD.md` | Xóa mục ArgoCD (dòng 1, 3, 39–46), thay mọi `file:///mnt/d/DOC/VT/notebook-api/` bằng đường dẫn tương đối. Tiêu đề DOCKER.md: "Build Docker image". Việc deploy là của hệ thống khác, chỉ ghi "image được hệ thống deploy của nền tảng kéo về". | `grep -rniE "argocd|file:///mnt" .` (trừ `plan/`) rỗng |
 | C4 (K9, D4) | `notebook-helm/templates/deployment.yaml`, `values.yaml` | Truyền `NOTEBOOK_AUTH_OIDC_ISSUER`, `…_CLIENT_ID`, `…_SCOPES`, `NOTEBOOK_AUTH_USERNAME_CLAIM`. Thêm khối `auth.ldap.*` (mọi key plan §2.5 trừ password) và render env khi `mode=ldap`. Mount `oidc-client-secret` thành `NOTEBOOK_OIDC_CLIENT_SECRET` (`optional: true`) khi `mode=oidc`. Gộp khối `oidc:` cũ vào `auth.oidc`. | `helm template` với 3 mode, mỗi mode đủ env, không thừa secret của mode khác |
@@ -355,7 +355,7 @@ làm mới, `/me` trả user. Ghi kết quả vào biên bản nghiệm thu mụ
 | 4 | **B2**, C18, C15 | Bảo mật web chung |
 | 5 | **B3**, C17 | LDAP |
 | 6 | **B7** | Cần B2 (hàm `api()`) |
-| 7 | C1–C6 | Đóng gói và chart |
+| 7 | C1–C6, làm theo `plan/chart-design.md` (H-1 → H-7) và `plan/chart-image-contract.md` (K1–K12, J1–J6, kiểm X1–X5) trong **cùng một commit nhóm** | Đóng gói, chart, khóa cấu hình |
 | 8 | C7–C9, C11–C14, C16, C19 | Execution và auth còn lại |
 | 9 | C20–C24 | Lưu trữ còn lại |
 | 10 | **B4** | Viết code + test WireMock. Bật thật khi P5.7 đạt |
