@@ -18,9 +18,8 @@ RUN groupadd -g 10001 notebook && \
 
 WORKDIR /app
 
-ARG VERSION=0.1.0-SNAPSHOT
-COPY backend/nb-notebook-service/target/nb-notebook-service-${VERSION}.jar /app/nb-notebook-service.jar
-COPY backend/nb-execution-service/target/nb-execution-service-${VERSION}.jar /app/nb-execution-service.jar
+COPY backend/nb-notebook-service/target/nb-notebook-service-*.jar /app/nb-notebook-service.jar
+COPY backend/nb-execution-service/target/nb-execution-service-*.jar /app/nb-execution-service.jar
 
 COPY frontend/public/ /usr/share/nginx/html/
 COPY docker/nginx.conf /etc/nginx/nginx.conf
