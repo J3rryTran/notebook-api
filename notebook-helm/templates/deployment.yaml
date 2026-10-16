@@ -115,7 +115,7 @@ spec:
                   name: {{ .Values.existingSecret }}
                   key: {{ .Values.secretKeys.ldapTruststorePassword }}
             {{- end }}
-            {{- with .Values.extraEnv }}
+            {{- with .Values.env }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
           volumeMounts:

@@ -128,7 +128,7 @@ resources:
   limits:   { cpu: "2",  memory: 2Gi }
 
 logLevel: INFO
-extraEnv: []
+env: []
 
 probes:
   startup:   { periodSeconds: 5,  failureThreshold: 60 }

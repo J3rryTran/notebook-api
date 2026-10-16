@@ -183,7 +183,7 @@ resources:
   limits:   { cpu: "2",  memory: 2Gi }
 
 logLevel: INFO                # root logger cả 2 JVM
-extraEnv: []                  # [{name: X, value: Y}] cho trường hợp đặc biệt
+env: []                       # [{name: X, value: Y}] cho trường hợp đặc biệt
 
 podSecurityContext:
   runAsNonRoot: true
@@ -360,7 +360,7 @@ Lớp kiểm thứ hai vẫn là `AuthPropertiesValidator` trong ứng dụng (B
 | Strategy | `RollingUpdate`, `maxUnavailable: 0`, `maxSurge: 1` |
 | `serviceAccountName` | SA của chart, `automountServiceAccountToken: false` (ứng dụng không gọi K8s API) |
 | Container | 1 container `notebook`, cổng `http: 8080` (nginx). Không expose 8081–8085 ra Service |
-| `args`/env | Env chỉ có secret (mục 4) + `JAVA_OPTS_NOTEBOOK`, `JAVA_OPTS_EXECUTION` từ `jvm.*` + `NOTEBOOK_CONFIG=/etc/notebook/application.yaml` + `extraEnv`. `entrypoint.sh` đọc 3 biến này |
+| `args`/env | Env chỉ có secret (mục 4) + `JAVA_OPTS_NOTEBOOK`, `JAVA_OPTS_EXECUTION` từ `jvm.*` + `NOTEBOOK_CONFIG=/etc/notebook/application.yaml` + `env`. `entrypoint.sh` đọc 3 biến này |
 | Volume | `config` (ConfigMap → `/etc/notebook/application.yaml`, `subPath`); `tmp` (`emptyDir` → `/tmp`, dùng cho nginx temp/pid và JVM vì `readOnlyRootFilesystem`); `ldap-truststore` (khi bật) |
 | `startupProbe` | `exec`: `/app/healthcheck.sh startup`, `periodSeconds: 5`, `failureThreshold: 60` (5 phút cho Flyway + 2 JVM) |
 | `readinessProbe` | `exec`: `/app/healthcheck.sh readiness`, mỗi 5 s, `failureThreshold: 3` |
