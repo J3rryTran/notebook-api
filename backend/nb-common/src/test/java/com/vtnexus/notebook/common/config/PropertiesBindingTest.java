@@ -35,4 +35,22 @@ class PropertiesBindingTest {
         assertThat(props.getIdleSessionTimeout()).isEqualTo(Duration.ZERO);
         assertThat(props.getIdleReaperInterval()).isEqualTo(60000L);
     }
+
+    @Test
+    void ldapKeysRenderedByChartBind() {
+        com.vtnexus.notebook.common.auth.AuthProperties props = new com.vtnexus.notebook.common.auth.AuthProperties();
+        new Binder(new MapConfigurationPropertySource(Map.of(
+                "notebook.auth.ldap.bind-dn", "uid=kyuubi,cn=users,cn=accounts,dc=lab,dc=com",
+                "notebook.auth.ldap.user-dn-pattern", "uid=%s,cn=users,cn=accounts,dc=lab,dc=com",
+                "notebook.auth.ldap.group-filter[0]", "notebook-users",
+                "notebook.auth.ldap.custom-ldap-query", "(uid=%s)",
+                "notebook.auth.ldap.service-account.username", "kyuubi")))
+                .bind("notebook.auth", Bindable.ofInstance(props));
+
+        assertThat(props.getLdap().getBindDn()).isEqualTo("uid=kyuubi,cn=users,cn=accounts,dc=lab,dc=com");
+        assertThat(props.getLdap().getUserDnPattern()).isEqualTo("uid=%s,cn=users,cn=accounts,dc=lab,dc=com");
+        assertThat(props.getLdap().getGroupFilter()).containsExactly("notebook-users");
+        assertThat(props.getLdap().getCustomLdapQuery()).isEqualTo("(uid=%s)");
+        assertThat(props.getLdap().getServiceAccount().getUsername()).isEqualTo("kyuubi");
+    }
 }

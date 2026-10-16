@@ -56,6 +56,10 @@ notebook:
       scopes: [openid, profile]
       service-client-id: notebook-api
       service-client-secret: ${NOTEBOOK_OIDC_CLIENT_SECRET:}
+    ldap:
+      service-account:
+        username: ""
+        password: ${NOTEBOOK_LDAP_SERVICE_ACCOUNT_PASSWORD:}
   results:
     max-rows: 1000
   events:

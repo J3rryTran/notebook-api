@@ -42,6 +42,8 @@ class AuthPropertiesValidatorTest {
     void testLdapMissingUrl() {
         MockEnvironment env = new MockEnvironment();
         env.setProperty("notebook.auth.mode", "ldap");
+        env.setProperty("notebook.auth.ldap.service-account.username", "notebook-svc");
+        env.setProperty("notebook.auth.ldap.service-account.password", "svc-pass");
         env.setProperty("notebook.encryptionKey", validKey());
         env.setProperty("notebook.internalToken", "secret");
         env.setProperty("notebook.auth.ldap.url", "");
@@ -51,33 +53,21 @@ class AuthPropertiesValidatorTest {
     }
 
     @Test
-    @DisplayName("T5.4: mode=ldap không đúng 1 trong userDnPattern hoặc userSearchFilter")
-    void testLdapAmbiguousPatternAndFilter() {
+    @DisplayName("T5.4: mode=ldap binddn và bindpw phải đi cùng nhau")
+    void testLdapBindDnRequiresPassword() {
         MockEnvironment env = new MockEnvironment();
         env.setProperty("notebook.auth.mode", "ldap");
-        env.setProperty("notebook.encryptionKey", validKey());
+        env.setProperty("notebook.auth.ldap.service-account.username", "notebook-svc");
+        env.setProperty("notebook.auth.ldap.service-account.password", "svc-pass");
         env.setProperty("notebook.internalToken", "secret");
         env.setProperty("notebook.auth.ldap.url", "ldaps://localhost:636");
-        env.setProperty("notebook.auth.ldap.userDnPattern", "uid={0},ou=people");
-        env.setProperty("notebook.auth.ldap.userSearchFilter", "(uid={0})");
+        env.setProperty("notebook.auth.ldap.bind-dn", "uid=kyuubi,cn=users,cn=accounts,dc=lab,dc=com");
 
         IllegalStateException ex = assertThrows(IllegalStateException.class, () -> AuthPropertiesValidator.validate(env));
-        assertEquals("set exactly one of userDnPattern or userSearchFilter", ex.getMessage());
-    }
+        assertEquals("notebook.auth.ldap.bind-dn and bind-password must be set together", ex.getMessage());
 
-    @Test
-    @DisplayName("T5.5: mode=ldap userSearch thiếu managerDn")
-    void testLdapMissingManagerDn() {
-        MockEnvironment env = new MockEnvironment();
-        env.setProperty("notebook.auth.mode", "ldap");
-        env.setProperty("notebook.encryptionKey", validKey());
-        env.setProperty("notebook.internalToken", "secret");
-        env.setProperty("notebook.auth.ldap.url", "ldaps://localhost:636");
-        env.setProperty("notebook.auth.ldap.userSearchFilter", "(uid={0})");
-        env.setProperty("notebook.auth.ldap.managerDn", "");
-
-        IllegalStateException ex = assertThrows(IllegalStateException.class, () -> AuthPropertiesValidator.validate(env));
-        assertEquals("managerDn is required when using userSearch", ex.getMessage());
+        env.setProperty("notebook.auth.ldap.bind-password", "pw");
+        assertDoesNotThrow(() -> AuthPropertiesValidator.validate(env));
     }
 
     @Test
@@ -85,6 +75,8 @@ class AuthPropertiesValidatorTest {
     void testLdapPlainWithoutStartTls() {
         MockEnvironment env = new MockEnvironment();
         env.setProperty("notebook.auth.mode", "ldap");
+        env.setProperty("notebook.auth.ldap.service-account.username", "notebook-svc");
+        env.setProperty("notebook.auth.ldap.service-account.password", "svc-pass");
         env.setProperty("notebook.encryptionKey", validKey());
         env.setProperty("notebook.internalToken", "secret");
         env.setProperty("notebook.auth.ldap.url", "ldap://localhost:389");
@@ -100,6 +92,8 @@ class AuthPropertiesValidatorTest {
     void testLdapTrustAllOutsideDev() {
         MockEnvironment env = new MockEnvironment();
         env.setProperty("notebook.auth.mode", "ldap");
+        env.setProperty("notebook.auth.ldap.service-account.username", "notebook-svc");
+        env.setProperty("notebook.auth.ldap.service-account.password", "svc-pass");
         env.setProperty("notebook.encryptionKey", validKey());
         env.setProperty("notebook.internalToken", "secret");
         env.setProperty("notebook.auth.ldap.url", "ldaps://localhost:636");
@@ -151,5 +145,20 @@ class AuthPropertiesValidatorTest {
         org.junit.jupiter.api.Assertions.assertFalse(AuthPropertiesValidator.isValidRedirectPath("https://evil.example/cb"));
         org.junit.jupiter.api.Assertions.assertFalse(AuthPropertiesValidator.isValidRedirectPath("/api/v1/cb"));
         org.junit.jupiter.api.Assertions.assertFalse(AuthPropertiesValidator.isValidRedirectPath("/internal/cb"));
+    }
+
+    @Test
+    void ldapRequiresServiceAccountButNotEncryptionKey() {
+        MockEnvironment env = new MockEnvironment();
+        env.setProperty("notebook.auth.mode", "ldap");
+        env.setProperty("notebook.internal-token", "t");
+        env.setProperty("notebook.auth.ldap.url", "ldaps://localhost:636");
+        env.setProperty("notebook.auth.ldap.user-dn-pattern", "uid={0},ou=people");
+        IllegalStateException ex = assertThrows(IllegalStateException.class, () -> AuthPropertiesValidator.validate(env));
+        assertEquals("notebook.auth.ldap.service-account.username and password are required for mode=ldap", ex.getMessage());
+
+        env.setProperty("notebook.auth.ldap.service-account.username", "notebook-svc");
+        env.setProperty("notebook.auth.ldap.service-account.password", "svc-pass");
+        assertDoesNotThrow(() -> AuthPropertiesValidator.validate(env));
     }
 }

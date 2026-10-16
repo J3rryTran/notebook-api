@@ -25,7 +25,7 @@ public class NotebookAuthSession {
     @Column(name = "auth_mode", length = 16, nullable = false)
     private String authMode;
 
-    @Column(name = "credential_enc", columnDefinition = "VARBINARY(1024)", nullable = false)
+    @Column(name = "credential_enc", columnDefinition = "VARBINARY(1024)")
     private byte[] credentialEnc;
 
     @Column(name = "is_admin", nullable = false)

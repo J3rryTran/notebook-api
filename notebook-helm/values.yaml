@@ -42,7 +42,8 @@ secretKeys:
   dbPassword: db-password
   authEncryptionKey: auth-encryption-key
   oidcClientSecret: oidc-client-secret
-  ldapManagerPassword: ldap-manager-password
+  ldapBindPassword: ldap-bindpw
+  ldapServiceAccountPassword: ldap-service-account-password
   ldapTruststore: ldap-truststore
   # ldapTruststorePassword: ldap-truststore-password
 
@@ -82,22 +83,26 @@ auth:
 
   ldap:
     url: "ldaps://freeipa.lab.com:636"
+    baseDN: "cn=accounts,dc=lab,dc=com"
+    domain: ""
+    binddn: "uid=kyuubi,cn=users,cn=accounts,dc=lab,dc=com"
+    guidKey: uid
+    userDNPattern: "uid=%s,cn=users,cn=accounts,dc=lab,dc=com"
+    groupDNPattern: "cn=%s,cn=groups,cn=accounts,dc=lab,dc=com"
+    groupClassKey: groupOfNames
+    groupMembershipKey: member
+    userMembershipKey: ""
+    groupFilter: []
+    userFilter: []
+    customLDAPQuery: ""
     startTls: false
-    baseDn: "cn=accounts,dc=lab,dc=com"
-    userDnPattern: "uid={0},cn=users,cn=accounts,dc=lab,dc=com"
-    userSearchBase: ""
-    userSearchFilter: ""
-    usernameAttribute: uid
-    managerDn: "uid=kyuubi,cn=users,cn=accounts,dc=lab,dc=com"
-    groupSearchBase: "cn=groups,cn=accounts,dc=lab,dc=com"
-    groupObjectClass: groupOfNames
-    groupMemberAttribute: member
-    adminGroup: ""
     connectTimeout: 5s
     readTimeout: 10s
     trustStore:
       enabled: true
       type: PEM
+    serviceAccount:
+      username: kyuubi
 
   session:
     ttl: 8h

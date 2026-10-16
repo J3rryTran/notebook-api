@@ -7,10 +7,13 @@ Notebook {{ .Chart.AppVersion }} (chart {{ .Chart.Version }}, contract 2), auth.
    - {{ .Values.secretKeys.oidcClientSecret }} (bắt buộc khi auth.oidc.serviceAccount.enabled=true)
 {{- end }}
 {{- else }}
-   - {{ .Values.secretKeys.authEncryptionKey }} (bắt buộc cho mode no-oidc và ldap: 32 bytes base64)
+{{- if eq .Values.auth.mode "no-oidc" }}
+   - {{ .Values.secretKeys.authEncryptionKey }} (32 bytes base64)
+{{- end }}
 {{- if eq .Values.auth.mode "ldap" }}
-{{- if .Values.auth.ldap.managerDn }}
-   - {{ .Values.secretKeys.ldapManagerPassword }} (mật khẩu của auth.ldap.managerDn)
+   - {{ .Values.secretKeys.ldapServiceAccountPassword }} (mật khẩu LDAP của {{ .Values.auth.ldap.serviceAccount.username }})
+{{- if .Values.auth.ldap.binddn }}
+   - {{ .Values.secretKeys.ldapBindPassword }} (bindpw của {{ .Values.auth.ldap.binddn }})
 {{- end }}
 {{- if .Values.auth.ldap.trustStore.enabled }}
    - {{ .Values.secretKeys.ldapTruststore }} (file nhị phân truststore mount vào container)
@@ -21,6 +24,13 @@ Notebook {{ .Chart.AppVersion }} (chart {{ .Chart.Version }}, contract 2), auth.
 {{- end }}
 {{- end }}
 
+{{- if eq .Values.auth.mode "ldap" }}
+[Kyuubi] notebook gọi Kyuubi bằng `{{ .Values.auth.ldap.serviceAccount.username }}` kèm hive.server2.proxy.user=<người dùng>.
+   Kyuubi server cần (kyuubi-defaults.conf, rồi restart Kyuubi):
+     hadoop.proxyuser.{{ .Values.auth.ldap.serviceAccount.username }}.users=*
+     hadoop.proxyuser.{{ .Values.auth.ldap.serviceAccount.username }}.hosts=*
+
+{{- end }}
 [MariaDB]
    User `{{ .Values.mariadb.username }}` cần quyền SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, INDEX, DROP,
    REFERENCES trên `{{ .Values.mariadb.database }}.*` (Flyway tạo/sửa bảng lúc khởi động).

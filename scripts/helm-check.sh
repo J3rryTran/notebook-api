@@ -33,12 +33,11 @@ else
   echo "$lint_out"
 fi
 LDAP_SETS=(--set auth.mode=ldap --set auth.ldap.url=ldaps://ldap.example.invalid:636 --set auth.ldap.startTls=false
-           --set auth.ldap.baseDn=dc=example --set auth.ldap.userSearchBase=ou=people
-           --set auth.ldap.userDnPattern= --set 'auth.ldap.userSearchFilter=(uid={0})' --set auth.ldap.usernameAttribute=uid
-           --set 'auth.ldap.managerDn=cn=svc\,dc=example\,dc=invalid' --set auth.ldap.groupSearchBase=ou=groups
-           --set auth.ldap.groupMemberAttribute=member --set auth.ldap.adminGroup=
+           --set auth.ldap.baseDN=dc=example --set 'auth.ldap.binddn=uid=svc\,dc=example'
+           --set 'auth.ldap.userDNPattern=uid=%s\,ou=people\,dc=example' --set auth.ldap.guidKey=uid
+           --set auth.ldap.groupClassKey=groupOfNames --set auth.ldap.groupMembershipKey=member
            --set auth.ldap.connectTimeout=5s --set auth.ldap.readTimeout=10s
-           --set auth.ldap.trustStore.enabled=false --set auth.ldap.trustStore.type=PKCS12)
+           --set auth.ldap.trustStore.enabled=false --set auth.ldap.trustStore.type=PKCS12 --set auth.ldap.serviceAccount.username=notebook-svc)
 
 echo "=== 2. Helm Template ==="
 echo "Rendering chart (values.yaml + giá trị môi trường giả, auth.mode=$(grep -E '^  mode:' "$CHART_DIR/values.yaml" | awk '{print $2}'))..."
@@ -56,7 +55,7 @@ echo "$out" | grep -q "requiredDuringSchedulingIgnoredDuringExecution" || { echo
 out=$("${HELM_T[@]}" --set ha.antiAffinity=none)
 if echo "$out" | grep -q "podAntiAffinity"; then echo "FAILED: none still renders anti-affinity"; exit 1; fi
 
-echo "=== 3. Helm Template 19 Validation Error Cases ==="
+echo "=== 3. Helm Template 17 Validation Error Cases ==="
 
 test_error() {
   local desc="$1"
@@ -89,17 +88,13 @@ test_error "mode=oidc and issuer empty" "auth.oidc.issuer is required for mode=o
 
 test_error "mode=ldap without ldap block" "auth.ldap block is required for mode=ldap" --set auth.mode=ldap --set auth.ldap=null
 
+test_error "ldap without serviceAccount.username" "auth.ldap.serviceAccount.username is required for mode=ldap" "${LDAP_SETS[@]}" --set auth.ldap.serviceAccount.username=
+
 test_error "mode=ldap and url empty" "auth.ldap.url is required for mode=ldap" "${LDAP_SETS[@]}" --set auth.ldap.url=""
-
-test_error "mode=ldap both pattern and filter" "set exactly one of auth.ldap.userDnPattern or userSearchFilter" "${LDAP_SETS[@]}" --set auth.ldap.userDnPattern="uid={0}" --set auth.ldap.userSearchFilter="(uid={0})"
-
-test_error "userSearchFilter without managerDn" "auth.ldap.managerDn is required with userSearchFilter" "${LDAP_SETS[@]}" --set auth.ldap.managerDn=""
 
 test_error "plain ldap without startTls" "plain ldap:// requires auth.ldap.startTls=true" "${LDAP_SETS[@]}" --set auth.ldap.url="ldap://10.29.19.56:389" --set auth.ldap.startTls=false
 
 test_error "ldaps with startTls" "auth.ldap.startTls must be false with ldaps://" "${LDAP_SETS[@]}" --set auth.ldap.startTls=true
-
-test_error "ldap without usernameAttribute" "auth.ldap.usernameAttribute is required for mode=ldap" "${LDAP_SETS[@]}" --set auth.ldap.usernameAttribute=""
 
 test_error "output.mode set in extraSessionConfigs" "output.mode must stay at Kyuubi default (AUTO)" --set 'kyuubi.extraSessionConfigs.kyuubi\.engine\.spark\.output\.mode=NOTEBOOK'
 

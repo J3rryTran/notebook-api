@@ -50,6 +50,7 @@ class ProxyUserWireMockTest {
     private ServiceAccountTokenProvider serviceAccountTokenProvider;
     private KyuubiRestClient kyuubiRestClient;
     private ExecutionService executionService;
+    private TransactionTemplate txTemplate;
 
     @BeforeAll
     static void startWireMock() {
@@ -88,7 +89,7 @@ class ProxyUserWireMockTest {
             @Override
             public void rollback(TransactionStatus status) throws TransactionException {}
         };
-        TransactionTemplate txTemplate = new TransactionTemplate(txManager);
+        txTemplate = new TransactionTemplate(txManager);
 
         com.vtnexus.notebook.common.auth.AuthProperties saAuthProps = new com.vtnexus.notebook.common.auth.AuthProperties();
         saAuthProps.getOidc().setIssuer(wireMockServer.baseUrl() + "/auth");
@@ -127,6 +128,34 @@ class ProxyUserWireMockTest {
                 authProps,
                 nbProps
         );
+    }
+
+    @Test
+    void testLdapModeAlwaysProxiesThroughLdapServiceAccount() {
+        com.vtnexus.notebook.common.auth.AuthProperties ldapAuth = new com.vtnexus.notebook.common.auth.AuthProperties();
+        ldapAuth.setMode("ldap");
+        ldapAuth.getLdap().getServiceAccount().setUsername("kyuubi");
+        ldapAuth.getLdap().getServiceAccount().setPassword("svc-pass");
+        com.vtnexus.notebook.common.config.NotebookProperties nbProps = new com.vtnexus.notebook.common.config.NotebookProperties();
+        ExecutionService ldapService = new ExecutionService(sessionRepository, runRepository, cellRunRepository, logRepository,
+                kyuubiRestClient, documentServiceClient, objectMapper, txTemplate, serviceAccountTokenProvider, ldapAuth, nbProps);
+
+        when(documentServiceClient.getRangerUsername("alice")).thenReturn("alice");
+        when(sessionRepository.findFirstByNotebookIdAndUserIdAndStatusInOrderByCreatedAtDesc(any(), any(), any()))
+                .thenReturn(Optional.empty());
+        String svcBasic = "Basic " + java.util.Base64.getEncoder().encodeToString("kyuubi:svc-pass".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        wireMockServer.stubFor(post(urlEqualTo("/api/v1/sessions"))
+                .willReturn(aResponse()
+                        .withHeader("Content-Type", "application/json")
+                        .withBody("{\"identifier\":\"kyuubi-session-ldap\",\"kyuubiInstance\":\"kyuubi-1:10099\"}")));
+
+        ExecutionService.SessionCreationResult res = ldapService.getOrCreateSession("nb-1", "alice", svcBasic, new HashMap<>());
+
+        assertThat(res.session().getProxied()).isTrue();
+        assertThat(res.session().getEffectiveUser()).isEqualTo("alice");
+        wireMockServer.verify(postRequestedFor(urlEqualTo("/api/v1/sessions"))
+                .withHeader("Authorization", equalTo(svcBasic))
+                .withRequestBody(containing("\"hive.server2.proxy.user\":\"alice\"")));
     }
 
     @Test

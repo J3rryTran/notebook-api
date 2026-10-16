@@ -48,23 +48,33 @@ public class AuthProperties {
     @Setter
     public static class LdapProperties {
         private String url = "";
+        private String baseDn = "";
+        private String domain = "";
+        private String bindDn = "";
+        private String bindPassword = "";
+        private String guidKey = "uid";
+        private String userDnPattern = "";
+        private String groupDnPattern = "";
+        private String groupClassKey = "groupOfNames";
+        private String groupMembershipKey = "member";
+        private String userMembershipKey = "";
+        private List<String> groupFilter = new ArrayList<>();
+        private List<String> userFilter = new ArrayList<>();
+        private String customLdapQuery = "";
         private boolean startTls = false;
         private String trustStore = "";
         private String trustStorePassword = "";
         private String trustStoreType = "PKCS12";
         private boolean trustAll = false;
-        private String baseDn = "";
-        private String userDnPattern = "";
-        private String userSearchBase = "ou=people";
-        private String userSearchFilter = "";
-        private String usernameAttribute = "uid";
-        private String managerDn = "";
-        private String managerPassword = "";
-        private String groupSearchBase = "ou=groups";
-        private String groupMemberAttribute = "member";
-        private String groupObjectClass = "*";
-        private String adminGroup = "";
         private Duration connectTimeout = Duration.ofSeconds(5);
         private Duration readTimeout = Duration.ofSeconds(10);
+        private ServiceAccount serviceAccount = new ServiceAccount();
+    }
+
+    @Getter
+    @Setter
+    public static class ServiceAccount {
+        private String username = "";
+        private String password = "";
     }
 }

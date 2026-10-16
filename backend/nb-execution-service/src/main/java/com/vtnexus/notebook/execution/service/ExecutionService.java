@@ -41,6 +41,7 @@ public class ExecutionService {
     private final TransactionTemplate transactionTemplate;
     private final ServiceAccountTokenProvider serviceAccountTokenProvider;
     private final String authMode;
+    private final com.vtnexus.notebook.common.auth.AuthProperties authProperties;
     private final KyuubiResultParser resultParser;
     private final int maxRows;
 
@@ -65,6 +66,7 @@ public class ExecutionService {
         this.objectMapper = objectMapper;
         this.transactionTemplate = transactionTemplate;
         this.serviceAccountTokenProvider = serviceAccountTokenProvider;
+        this.authProperties = authProperties;
         String mode = authProperties.getMode();
         this.authMode = mode != null ? mode.toLowerCase() : "oidc";
         this.resultParser = new KyuubiResultParser();
@@ -101,16 +103,16 @@ public class ExecutionService {
         boolean isProxied = false;
         String effectiveAuthHeader = authHeader;
 
-        if ("oidc".equals(authMode)) {
+        if ("ldap".equals(authMode)) {
+            isProxied = true;
+            effectiveAuthHeader = serviceAuth();
+        } else if ("oidc".equals(authMode)) {
             if (rangerUser != null && !rangerUser.equals(user)) {
                 isProxied = true;
-                String serviceToken = serviceAccountTokenProvider.getServiceAccountToken();
-                effectiveAuthHeader = "Bearer " + serviceToken;
+                effectiveAuthHeader = serviceAuth();
             }
-        } else {
-            if (rangerUser != null && !rangerUser.equals(user)) {
-                log.warn("Proxy user for user {} (ranger={}) in non-OIDC mode is not supported; proceeding as direct user", user, rangerUser);
-            }
+        } else if (rangerUser != null && !rangerUser.equals(user)) {
+            log.warn("Proxy user for user {} (ranger={}) in no-oidc mode is not supported; proceeding as direct user", user, rangerUser);
         }
 
         Map<String, String> kSession = kyuubiRestClient.openSession(effectiveAuthHeader, validConfigs, isProxied ? rangerUser : null);
@@ -206,7 +208,7 @@ public class ExecutionService {
         Exception submitEx = null;
         try {
             String submitAuth = prep.proxied()
-                    ? ("Bearer " + serviceAccountTokenProvider.getServiceAccountToken())
+                    ? serviceAuth()
                     : authHeader;
             opId = kyuubiRestClient.submitStatement(prep.kyuubiSessionId(), prep.kyuubiInstance(), source, language, submitAuth);
         } catch (Exception ex) {
@@ -267,7 +269,7 @@ public class ExecutionService {
         if ("CANCELED".equals(dto.getStatus()) && finalOpId != null) {
             try {
                 String cancelAuth = prep.proxied()
-                        ? ("Bearer " + serviceAccountTokenProvider.getServiceAccountToken())
+                        ? serviceAuth()
                         : authHeader;
                 kyuubiRestClient.cancelOperation(finalOpId, prep.kyuubiInstance(), cancelAuth);
             } catch (Exception ex) {
@@ -283,6 +285,13 @@ public class ExecutionService {
                     sess.setStatus("LOST");
                     sessionRepository.save(sess);
                 }));
+    }
+
+    private String serviceAuth() {
+        if ("ldap".equals(authMode)) {
+            return com.vtnexus.notebook.common.auth.LdapServiceAccount.basicHeader(authProperties);
+        }
+        return "Bearer " + serviceAccountTokenProvider.getServiceAccountToken();
     }
 
     private record SubmitPreparation(String kyuubiSessionId, String kyuubiInstance, int executionCount, boolean proxied) {}
@@ -308,7 +317,7 @@ public class ExecutionService {
         String instance = session != null ? session.getKyuubiInstance() : null;
 
         String effectiveAuth = (session != null && Boolean.TRUE.equals(session.getProxied()))
-                ? ("Bearer " + serviceAccountTokenProvider.getServiceAccountToken())
+                ? serviceAuth()
                 : authHeader;
 
         JsonNode event = null;
@@ -698,7 +707,7 @@ public class ExecutionService {
                 : null;
         String instance = session != null ? session.getKyuubiInstance() : null;
         String effectiveCancelAuth = (session != null && Boolean.TRUE.equals(session.getProxied()))
-                ? ("Bearer " + serviceAccountTokenProvider.getServiceAccountToken())
+                ? serviceAuth()
                 : authHeader;
 
         if (cellRun.getExecutionId() != null) {
@@ -731,7 +740,7 @@ public class ExecutionService {
             if (session.getKyuubiSessionId() != null) {
                 try {
                     String closeAuth = Boolean.TRUE.equals(session.getProxied())
-                            ? ("Bearer " + serviceAccountTokenProvider.getServiceAccountToken())
+                            ? serviceAuth()
                             : authHeader;
                     kyuubiRestClient.closeSession(session.getKyuubiSessionId(), session.getKyuubiInstance(), closeAuth);
                 } catch (Exception ignored) {}
@@ -771,18 +780,20 @@ public class ExecutionService {
         String effectiveAuthHeader = authHeader;
         Map<String, String> configs = new HashMap<>();
 
-        if ("oidc".equals(authMode)) {
+        if ("ldap".equals(authMode)) {
+            isProxied = true;
+            effectiveAuthHeader = serviceAuth();
+        } else if ("oidc".equals(authMode)) {
             if (rangerUser != null && !rangerUser.equals(user)) {
                 isProxied = true;
-                String serviceToken = serviceAccountTokenProvider.getServiceAccountToken();
-                effectiveAuthHeader = "Bearer " + serviceToken;
+                effectiveAuthHeader = serviceAuth();
             }
         }
 
         if (session.getKyuubiSessionId() != null) {
             try {
                 String closeAuth = Boolean.TRUE.equals(session.getProxied())
-                        ? ("Bearer " + serviceAccountTokenProvider.getServiceAccountToken())
+                        ? serviceAuth()
                         : authHeader;
                 kyuubiRestClient.closeSession(session.getKyuubiSessionId(), session.getKyuubiInstance(), closeAuth);
             } catch (Exception ignored) {}

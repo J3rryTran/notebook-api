@@ -2,6 +2,7 @@ package com.vtnexus.notebook.store.service;
 
 import com.vtnexus.notebook.common.auth.AuthProperties;
 import com.vtnexus.notebook.common.auth.CredentialCrypto;
+import com.vtnexus.notebook.common.auth.LdapServiceAccount;
 import com.vtnexus.notebook.common.auth.SessionInfo;
 import com.vtnexus.notebook.common.exception.NotebookApiException;
 import com.vtnexus.notebook.store.model.NotebookAuthSession;
@@ -59,12 +60,13 @@ public class AuthSessionService {
     }
 
     public NotebookAuthSession createSession(String username, String password, String authMode, boolean isAdmin) {
-        if (credentialCrypto == null) {
-            throw new IllegalStateException("Encryption key is not configured for session storage");
+        byte[] enc = null;
+        if (!isLdap(authMode)) {
+            if (credentialCrypto == null) {
+                throw new IllegalStateException("Encryption key is not configured for session storage");
+            }
+            enc = credentialCrypto.encrypt(username + ":" + password);
         }
-
-        String rawCred = username + ":" + password;
-        byte[] enc = credentialCrypto.encrypt(rawCred);
         Instant now = Instant.now();
 
         boolean adminFlag = isAdmin || admins.contains(username);
@@ -85,7 +87,7 @@ public class AuthSessionService {
     }
 
     public SessionInfo resolveSession(String sessionId) {
-        if (sessionId == null || sessionId.isBlank() || credentialCrypto == null) {
+        if (sessionId == null || sessionId.isBlank()) {
             return null;
         }
 
@@ -102,6 +104,14 @@ public class AuthSessionService {
             return null;
         }
 
+        if (isLdap(session.getAuthMode())) {
+            return resolveLdapSession(session, now);
+        }
+        if (credentialCrypto == null || session.getCredentialEnc() == null) {
+            sessionRepository.delete(session);
+            return null;
+        }
+
         String rawCred;
         try {
             rawCred = credentialCrypto.decrypt(session.getCredentialEnc());
@@ -109,10 +119,6 @@ public class AuthSessionService {
             sessionRepository.delete(session);
             return null;
         }
-
-        int colonIdx = rawCred.indexOf(':');
-        String username = colonIdx > 0 ? rawCred.substring(0, colonIdx) : session.getUsername();
-        String password = colonIdx > 0 ? rawCred.substring(colonIdx + 1) : "";
 
         Duration timeSinceRecheck = Duration.between(session.getLastRecheckAt(), now);
         if (timeSinceRecheck.compareTo(authProperties.getRecheck()) > 0) {
@@ -140,21 +146,6 @@ public class AuthSessionService {
                     log.warn("Kyuubi unavailable during session recheck: {}", ex.getMessage());
                     backendUnavailable = true;
                 }
-            } else if ("ldap".equalsIgnoreCase(session.getAuthMode())) {
-                try {
-                    LdapAuthenticator.LdapUser ldapUser = ldapAuthenticator.authenticate(username, password);
-                    recheckPassed = true;
-                    session.setAdmin(ldapUser.isAdmin() || admins.contains(username));
-                } catch (NotebookApiException ex) {
-                    if ("AUTH_BACKEND_UNAVAILABLE".equals(ex.getCode())) {
-                        backendUnavailable = true;
-                    } else {
-                        recheckPassed = false;
-                    }
-                } catch (Exception ex) {
-                    log.warn("LDAP unavailable during session recheck: {}", ex.getMessage());
-                    backendUnavailable = true;
-                }
             } else {
                 recheckPassed = true;
             }
@@ -179,6 +170,34 @@ public class AuthSessionService {
         }
 
         return new SessionInfo(session.getUsername(), basicAuth, session.isAdmin());
+    }
+
+    private SessionInfo resolveLdapSession(NotebookAuthSession session, Instant now) {
+        String username = session.getUsername();
+        if (Duration.between(session.getLastRecheckAt(), now).compareTo(authProperties.getRecheck()) > 0) {
+            try {
+                LdapAuthenticator.LdapUser ldapUser = ldapAuthenticator.lookupUser(username);
+                session.setAdmin(ldapUser.isAdmin() || admins.contains(username));
+                session.setLastRecheckAt(now);
+                sessionRepository.save(session);
+            } catch (NotebookApiException ex) {
+                if (!"AUTH_BACKEND_UNAVAILABLE".equals(ex.getCode())) {
+                    log.info("LDAP user {} no longer valid, invalidating session", username);
+                    sessionRepository.delete(session);
+                    return null;
+                }
+            }
+        }
+        if (Duration.between(session.getLastSeenAt(), now).toSeconds() > 60) {
+            session.setLastSeenAt(now);
+            session.setExpiresAt(now.plus(authProperties.getSessionTtl()));
+            sessionRepository.save(session);
+        }
+        return new SessionInfo(username, LdapServiceAccount.basicHeader(authProperties), session.isAdmin());
+    }
+
+    private static boolean isLdap(String authMode) {
+        return "ldap".equalsIgnoreCase(authMode);
     }
 
     public void deleteSession(String sessionId) {

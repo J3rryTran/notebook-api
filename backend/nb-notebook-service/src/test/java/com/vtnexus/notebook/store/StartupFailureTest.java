@@ -67,7 +67,8 @@ class StartupFailureTest {
                     .run(
                             "--spring.datasource.url=jdbc:mariadb://localhost:3306/test",
                             "--notebook.auth.mode=ldap",
-                            "--notebook.encryptionKey=1234567890123456789012345678901234567890123=",
+                            "--notebook.auth.ldap.service-account.username=kyuubi",
+                            "--notebook.auth.ldap.service-account.password=svc-pass",
                             "--notebook.internalToken=secret-token"
                     );
         }).hasMessageContaining("notebook.auth.ldap.url is required");

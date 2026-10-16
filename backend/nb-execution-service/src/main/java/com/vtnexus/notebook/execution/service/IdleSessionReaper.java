@@ -25,6 +25,7 @@ public class IdleSessionReaper {
     private final NotebookCellRunRepository cellRunRepository;
     private final KyuubiRestClient kyuubiRestClient;
     private final ServiceAccountTokenProvider serviceAccountTokenProvider;
+    private final com.vtnexus.notebook.common.auth.AuthProperties authProperties;
     private final TransactionTemplate transactionTemplate;
     private final Duration idleTimeout;
 
@@ -33,7 +34,9 @@ public class IdleSessionReaper {
                              KyuubiRestClient kyuubiRestClient,
                              ServiceAccountTokenProvider serviceAccountTokenProvider,
                              TransactionTemplate transactionTemplate,
-                             KyuubiProperties kyuubiProperties) {
+                             KyuubiProperties kyuubiProperties,
+                             com.vtnexus.notebook.common.auth.AuthProperties authProperties) {
+        this.authProperties = authProperties;
         this.sessionRepository = sessionRepository;
         this.cellRunRepository = cellRunRepository;
         this.kyuubiRestClient = kyuubiRestClient;
@@ -76,11 +79,18 @@ public class IdleSessionReaper {
         if (Boolean.TRUE.equals(closed.getProxied()) && closed.getKyuubiSessionId() != null) {
             try {
                 kyuubiRestClient.closeSession(closed.getKyuubiSessionId(), closed.getKyuubiInstance(),
-                        "Bearer " + serviceAccountTokenProvider.getServiceAccountToken());
+                        serviceAuth());
             } catch (Exception ex) {
                 log.warn("Idle session {} marked CLOSED but Kyuubi close failed: {}", sessionId, ex.getMessage());
             }
         }
         log.info("Closed idle notebook session {} (user={}, idle > {})", sessionId, closed.getUserId(), idleTimeout);
+    }
+
+    private String serviceAuth() {
+        if ("ldap".equalsIgnoreCase(authProperties.getMode())) {
+            return com.vtnexus.notebook.common.auth.LdapServiceAccount.basicHeader(authProperties);
+        }
+        return "Bearer " + serviceAccountTokenProvider.getServiceAccountToken();
     }
 }

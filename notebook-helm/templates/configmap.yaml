@@ -39,25 +39,23 @@ data:
         {{- if eq .Values.auth.mode "ldap" }}
         ldap:
           url: {{ .Values.auth.ldap.url | quote }}
-          start-tls: {{ .Values.auth.ldap.startTls }}
-          base-dn: {{ .Values.auth.ldap.baseDn | quote }}
-          username-attribute: {{ .Values.auth.ldap.usernameAttribute | quote }}
-          {{- if .Values.auth.ldap.userDnPattern }}
-          user-dn-pattern: {{ .Values.auth.ldap.userDnPattern | quote }}
-          {{- end }}
-          {{- if .Values.auth.ldap.userSearchFilter }}
-          user-search-base: {{ .Values.auth.ldap.userSearchBase | quote }}
-          user-search-filter: {{ .Values.auth.ldap.userSearchFilter | quote }}
-          {{- end }}
-          {{- if .Values.auth.ldap.managerDn }}
-          manager-dn: {{ .Values.auth.ldap.managerDn | quote }}
-          {{- end }}
-          group-search-base: {{ .Values.auth.ldap.groupSearchBase | quote }}
-          group-member-attribute: {{ .Values.auth.ldap.groupMemberAttribute | quote }}
-          group-object-class: {{ .Values.auth.ldap.groupObjectClass | default "*" | quote }}
-          admin-group: {{ .Values.auth.ldap.adminGroup | quote }}
-          connect-timeout: {{ .Values.auth.ldap.connectTimeout }}
-          read-timeout: {{ .Values.auth.ldap.readTimeout }}
+          base-dn: {{ .Values.auth.ldap.baseDN | default "" | quote }}
+          domain: {{ .Values.auth.ldap.domain | default "" | quote }}
+          bind-dn: {{ .Values.auth.ldap.binddn | default "" | quote }}
+          guid-key: {{ .Values.auth.ldap.guidKey | default "uid" | quote }}
+          user-dn-pattern: {{ .Values.auth.ldap.userDNPattern | default "" | quote }}
+          group-dn-pattern: {{ .Values.auth.ldap.groupDNPattern | default "" | quote }}
+          group-class-key: {{ .Values.auth.ldap.groupClassKey | default "groupOfNames" | quote }}
+          group-membership-key: {{ .Values.auth.ldap.groupMembershipKey | default "member" | quote }}
+          user-membership-key: {{ .Values.auth.ldap.userMembershipKey | default "" | quote }}
+          group-filter: {{ .Values.auth.ldap.groupFilter | default (list) | toJson }}
+          user-filter: {{ .Values.auth.ldap.userFilter | default (list) | toJson }}
+          custom-ldap-query: {{ .Values.auth.ldap.customLDAPQuery | default "" | quote }}
+          start-tls: {{ .Values.auth.ldap.startTls | default false }}
+          connect-timeout: {{ .Values.auth.ldap.connectTimeout | default "5s" }}
+          read-timeout: {{ .Values.auth.ldap.readTimeout | default "10s" }}
+          service-account:
+            username: {{ .Values.auth.ldap.serviceAccount.username | quote }}
           {{- if .Values.auth.ldap.trustStore.enabled }}
           trust-store: "/etc/notebook/ldap/truststore"
           trust-store-type: {{ .Values.auth.ldap.trustStore.type | quote }}

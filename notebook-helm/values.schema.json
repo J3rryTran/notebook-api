@@ -175,8 +175,55 @@
                 }
               }
             },
-            "groupObjectClass": {
+            "serviceAccount": {
+              "type": "object",
+              "properties": {
+                "username": {
+                  "type": "string"
+                }
+              }
+            },
+            "baseDN": {
               "type": "string"
+            },
+            "domain": {
+              "type": "string"
+            },
+            "binddn": {
+              "type": "string"
+            },
+            "guidKey": {
+              "type": "string"
+            },
+            "userDNPattern": {
+              "type": "string"
+            },
+            "groupDNPattern": {
+              "type": "string"
+            },
+            "groupClassKey": {
+              "type": "string"
+            },
+            "groupMembershipKey": {
+              "type": "string"
+            },
+            "userMembershipKey": {
+              "type": "string"
+            },
+            "customLDAPQuery": {
+              "type": "string"
+            },
+            "groupFilter": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "userFilter": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
             }
           }
         }

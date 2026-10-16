@@ -22,12 +22,11 @@ trap 'rm -rf "${TMP_DIR}"' EXIT
 
 docker run --rm -v "${ROOT_DIR}/notebook-helm":/c alpine/helm:3.14.4 template t /c "${ENV_SETS[@]}" --set auth.mode=oidc --set auth.oidc.serviceAccount.enabled=true > "${TMP_DIR}/oidc.yaml"
 LDAP_SETS=(--set auth.mode=ldap --set auth.ldap.url=ldaps://ldap.example.invalid:636 --set auth.ldap.startTls=false
-           --set auth.ldap.baseDn=dc=example --set auth.ldap.userSearchBase=ou=people
-           --set auth.ldap.userDnPattern= --set 'auth.ldap.userSearchFilter=(uid={0})' --set auth.ldap.usernameAttribute=uid
-           --set 'auth.ldap.managerDn=cn=svc\,dc=example\,dc=invalid' --set auth.ldap.groupSearchBase=ou=groups
-           --set auth.ldap.groupMemberAttribute=member --set auth.ldap.adminGroup=
+           --set auth.ldap.baseDN=dc=example --set 'auth.ldap.binddn=uid=svc\,dc=example'
+           --set 'auth.ldap.userDNPattern=uid=%s\,ou=people\,dc=example' --set auth.ldap.guidKey=uid
+           --set auth.ldap.groupClassKey=groupOfNames --set auth.ldap.groupMembershipKey=member
            --set auth.ldap.connectTimeout=5s --set auth.ldap.readTimeout=10s
-           --set auth.ldap.trustStore.enabled=false --set auth.ldap.trustStore.type=PKCS12)
+           --set auth.ldap.trustStore.enabled=false --set auth.ldap.trustStore.type=PKCS12 --set auth.ldap.serviceAccount.username=notebook-svc)
 docker run --rm -v "${ROOT_DIR}/notebook-helm":/c alpine/helm:3.14.4 template t /c "${ENV_SETS[@]}" \
   "${LDAP_SETS[@]}" --set auth.ldap.trustStore.enabled=true > "${TMP_DIR}/ldap.yaml"
 
@@ -52,11 +51,17 @@ EXPECTED_CONFIG_KEYS=(
   "notebook.auth.ldap.url"
   "notebook.auth.ldap.start-tls"
   "notebook.auth.ldap.base-dn"
-  "notebook.auth.ldap.username-attribute"
-  "notebook.auth.ldap.group-search-base"
-  "notebook.auth.ldap.group-member-attribute"
-  "notebook.auth.ldap.group-object-class"
-  "notebook.auth.ldap.admin-group"
+  "notebook.auth.ldap.bind-dn"
+  "notebook.auth.ldap.guid-key"
+  "notebook.auth.ldap.user-dn-pattern"
+  "notebook.auth.ldap.group-dn-pattern"
+  "notebook.auth.ldap.group-class-key"
+  "notebook.auth.ldap.group-membership-key"
+  "notebook.auth.ldap.user-membership-key"
+  "notebook.auth.ldap.group-filter"
+  "notebook.auth.ldap.user-filter"
+  "notebook.auth.ldap.custom-ldap-query"
+  "notebook.auth.ldap.service-account.username"
   "notebook.auth.ldap.connect-timeout"
   "notebook.auth.ldap.read-timeout"
   "notebook.max.cells"

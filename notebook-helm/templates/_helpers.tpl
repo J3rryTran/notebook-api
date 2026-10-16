@@ -81,25 +81,17 @@ app.kubernetes.io/instance: {{ .Release.Name }}
   {{- if not .Values.auth.ldap.trustStore }}
     {{- fail "auth.ldap.trustStore is required for mode=ldap (enabled: false nếu không dùng)" }}
   {{- end }}
+  {{- if not (and .Values.auth.ldap.serviceAccount .Values.auth.ldap.serviceAccount.username) }}
+    {{- fail "auth.ldap.serviceAccount.username is required for mode=ldap" }}
+  {{- end }}
   {{- if not .Values.auth.ldap.url }}
     {{- fail "auth.ldap.url is required for mode=ldap" }}
-  {{- end }}
-  {{- $hasPattern := and .Values.auth.ldap.userDnPattern (ne .Values.auth.ldap.userDnPattern "") }}
-  {{- $hasFilter := and .Values.auth.ldap.userSearchFilter (ne .Values.auth.ldap.userSearchFilter "") }}
-  {{- if or (and $hasPattern $hasFilter) (and (not $hasPattern) (not $hasFilter)) }}
-    {{- fail "set exactly one of auth.ldap.userDnPattern or userSearchFilter" }}
-  {{- end }}
-  {{- if and $hasFilter (not .Values.auth.ldap.managerDn) }}
-    {{- fail "auth.ldap.managerDn is required with userSearchFilter" }}
   {{- end }}
   {{- if and (hasPrefix "ldap://" .Values.auth.ldap.url) (not .Values.auth.ldap.startTls) }}
     {{- fail "plain ldap:// requires auth.ldap.startTls=true" }}
   {{- end }}
   {{- if and (hasPrefix "ldaps://" .Values.auth.ldap.url) .Values.auth.ldap.startTls }}
     {{- fail "auth.ldap.startTls must be false with ldaps:// (already TLS)" }}
-  {{- end }}
-  {{- if not .Values.auth.ldap.usernameAttribute }}
-    {{- fail "auth.ldap.usernameAttribute is required for mode=ldap" }}
   {{- end }}
 {{- end }}
 

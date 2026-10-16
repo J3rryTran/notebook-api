@@ -62,23 +62,29 @@ notebook:
       service-client-secret: ${NOTEBOOK_OIDC_CLIENT_SECRET:}
     ldap:
       url: ""
+      base-dn: ""
+      domain: ""
+      bind-dn: ""
+      bind-password: ${NOTEBOOK_LDAP_BIND_PASSWORD:}
+      guid-key: uid
+      user-dn-pattern: ""
+      group-dn-pattern: ""
+      group-class-key: groupOfNames
+      group-membership-key: member
+      user-membership-key: ""
+      group-filter: []
+      user-filter: []
+      custom-ldap-query: ""
       start-tls: false
       trust-store: ""
       trust-store-password: ${NOTEBOOK_LDAP_TRUSTSTORE_PASSWORD:}
       trust-store-type: PKCS12
       trust-all: false
-      base-dn: ""
-      user-dn-pattern: ""
-      user-search-base: ou=people
-      user-search-filter: (uid={0})
-      username-attribute: uid
-      manager-dn: ""
-      manager-password: ${NOTEBOOK_LDAP_MANAGER_PASSWORD:}
-      group-search-base: ou=groups
-      group-member-attribute: member
-      admin-group: ""
       connect-timeout: 5s
       read-timeout: 10s
+      service-account:
+        username: ""
+        password: ${NOTEBOOK_LDAP_SERVICE_ACCOUNT_PASSWORD:}
   cell:
     source:
       max-size: 1048576

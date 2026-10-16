@@ -31,7 +31,7 @@ public class AuthPropertiesValidator implements EnvironmentPostProcessor, Ordere
             throw new IllegalStateException("notebook.auth.mode must be one of oidc, no-oidc, ldap");
         }
 
-        if (mode == AuthMode.NO_OIDC || mode == AuthMode.LDAP) {
+        if (mode == AuthMode.NO_OIDC) {
             String encKey = env.getProperty("notebook.encryption-key");
             if (encKey == null || encKey.isBlank()) {
                 encKey = env.getProperty("notebook.encryptionKey");
@@ -59,30 +59,20 @@ public class AuthPropertiesValidator implements EnvironmentPostProcessor, Ordere
         }
 
         if (mode == AuthMode.LDAP) {
+            String saUser = env.getProperty("notebook.auth.ldap.service-account.username");
+            String saPass = env.getProperty("notebook.auth.ldap.service-account.password");
+            if (saUser == null || saUser.isBlank() || saPass == null || saPass.isEmpty()) {
+                throw new IllegalStateException("notebook.auth.ldap.service-account.username and password are required for mode=ldap");
+            }
             String url = env.getProperty("notebook.auth.ldap.url");
             if (url == null || url.isBlank()) {
                 throw new IllegalStateException("notebook.auth.ldap.url is required");
             }
 
-            String userDnPattern = env.getProperty("notebook.auth.ldap.user-dn-pattern");
-            if (userDnPattern == null) userDnPattern = env.getProperty("notebook.auth.ldap.userDnPattern");
-
-            String userSearchFilter = env.getProperty("notebook.auth.ldap.user-search-filter");
-            if (userSearchFilter == null) userSearchFilter = env.getProperty("notebook.auth.ldap.userSearchFilter");
-
-            boolean hasPattern = userDnPattern != null && !userDnPattern.isBlank();
-            boolean hasFilter = userSearchFilter != null && !userSearchFilter.isBlank();
-
-            if ((hasPattern && hasFilter) || (!hasPattern && !hasFilter)) {
-                throw new IllegalStateException("set exactly one of userDnPattern or userSearchFilter");
-            }
-
-            if (hasFilter) {
-                String managerDn = env.getProperty("notebook.auth.ldap.manager-dn");
-                if (managerDn == null) managerDn = env.getProperty("notebook.auth.ldap.managerDn");
-                if (managerDn == null || managerDn.isBlank()) {
-                    throw new IllegalStateException("managerDn is required when using userSearch");
-                }
+            String bindDn = env.getProperty("notebook.auth.ldap.bind-dn", "");
+            String bindPassword = env.getProperty("notebook.auth.ldap.bind-password", "");
+            if (bindDn.isBlank() != bindPassword.isEmpty()) {
+                throw new IllegalStateException("notebook.auth.ldap.bind-dn and bind-password must be set together");
             }
 
             String startTlsStr = env.getProperty("notebook.auth.ldap.start-tls");
