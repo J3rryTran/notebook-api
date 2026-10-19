@@ -11,7 +11,7 @@ Một image all-in-one (contract 2), deploy bằng chart `notebook-helm`. Cách 
 | execution-service | `app/nb-execution-service.jar` | `/app/nb-execution-service.jar` (127.0.0.1:8082, actuator :8083) |
 | Web UI | `web/` | `/usr/share/nginx/html/` |
 | nginx | `conf/nginx.conf` | `/etc/nginx/nginx.conf`, cổng **8080** (duy nhất mở ra ngoài) |
-| Khởi động / probe | `bin/entrypoint.sh`, `bin/healthcheck.sh` | `/app/` |
+| Khởi động | `bin/entrypoint.sh` | `/app/` |
 
 - Base `debian:12-slim`, JDK 17 lấy từ `trungtmba11093/java_env:java17-v0`.
 - Chạy user `notebook` (uid/gid 10001), chạy được với root filesystem chỉ đọc, chỉ ghi `/tmp`.

@@ -130,10 +130,6 @@ resources:
 logLevel: INFO
 env: []
 
-probes:
-  readiness: { initialDelaySeconds: 30,  periodSeconds: 5,  failureThreshold: 3 }
-  liveness:  { initialDelaySeconds: 120, periodSeconds: 10, failureThreshold: 3 }
-
 terminationGracePeriodSeconds: 40
 preStopSleepSeconds: 5
 

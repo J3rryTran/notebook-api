@@ -23,9 +23,8 @@ COPY app/nb-execution-service.jar /app/nb-execution-service.jar
 COPY web/ /usr/share/nginx/html/
 COPY conf/nginx.conf /etc/nginx/nginx.conf
 COPY bin/entrypoint.sh /app/entrypoint.sh
-COPY bin/healthcheck.sh /app/healthcheck.sh
 
-RUN chmod 0755 /app/entrypoint.sh /app/healthcheck.sh && \
+RUN chmod 0755 /app/entrypoint.sh && \
     chown -R 10001:10001 /app /usr/share/nginx/html
 
 USER 10001

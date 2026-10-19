@@ -66,7 +66,7 @@ pass B3 "Frontend tự chứa, checksum vendor khớp"
 
 step "B4: Kiểm script & nginx.conf"
 docker run --rm -v "${ROOT_DIR}":/mnt -w /mnt koalaman/shellcheck:v0.10.0 \
-  docker/entrypoint.sh docker/healthcheck.sh scripts/build.sh scripts/package-image.sh || fail B4 "ShellCheck báo lỗi"
+  docker/entrypoint.sh scripts/build.sh scripts/package-image.sh || fail B4 "ShellCheck báo lỗi"
 docker run --rm -v "${ROOT_DIR}/docker/nginx.conf":/etc/nginx/nginx.conf:ro nginx:1.27-alpine nginx -t > /dev/null 2>&1 \
   || fail B4 "nginx -t báo lỗi docker/nginx.conf"
 pass B4 "ShellCheck, nginx -t sạch"
@@ -77,7 +77,7 @@ cp "${NB_JAR}"   "${CONTEXT_DIR}/app/nb-notebook-service.jar"
 cp "${EXEC_JAR}" "${CONTEXT_DIR}/app/nb-execution-service.jar"
 cp -r "${ROOT_DIR}/frontend/public/." "${CONTEXT_DIR}/web/"
 cp "${ROOT_DIR}/docker/nginx.conf" "${CONTEXT_DIR}/conf/nginx.conf"
-cp "${ROOT_DIR}/docker/entrypoint.sh" "${ROOT_DIR}/docker/healthcheck.sh" "${CONTEXT_DIR}/bin/"
+cp "${ROOT_DIR}/docker/entrypoint.sh" "${CONTEXT_DIR}/bin/"
 cp "${ROOT_DIR}/Dockerfile" "${CONTEXT_DIR}/Dockerfile"
 
 GIT_REV=$(git rev-parse HEAD 2>/dev/null || echo unknown)

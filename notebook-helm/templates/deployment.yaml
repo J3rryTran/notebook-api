@@ -51,18 +51,6 @@ spec:
             preStop:
               exec:
                 command: ["sleep", "{{ .Values.preStopSleepSeconds }}"]
-          readinessProbe:
-            exec:
-              command: ["/app/healthcheck.sh", "readiness"]
-            initialDelaySeconds: {{ .Values.probes.readiness.initialDelaySeconds }}
-            periodSeconds: {{ .Values.probes.readiness.periodSeconds }}
-            failureThreshold: {{ .Values.probes.readiness.failureThreshold }}
-          livenessProbe:
-            exec:
-              command: ["/app/healthcheck.sh", "liveness"]
-            initialDelaySeconds: {{ .Values.probes.liveness.initialDelaySeconds }}
-            periodSeconds: {{ .Values.probes.liveness.periodSeconds }}
-            failureThreshold: {{ .Values.probes.liveness.failureThreshold }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           env:
