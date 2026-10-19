@@ -89,7 +89,15 @@ public class KyuubiAuthProbe implements ApplicationRunner {
         } catch (IllegalStateException ex) {
             throw ex;
         } catch (Exception ex) {
-            log.warn("Kyuubi auth probe could not connect to Kyuubi at {}: {}. Continuing startup.", kyuubiRestUrl, ex.getMessage());
+            Throwable root = ex;
+            while (root.getCause() != null && root.getCause() != root) {
+                root = root.getCause();
+            }
+            String detail = ex.getClass().getName() + (ex.getMessage() != null ? (": " + ex.getMessage()) : "");
+            if (root != ex) {
+                detail += " (root cause: " + root.getClass().getName() + (root.getMessage() != null ? (": " + root.getMessage()) : "") + ")";
+            }
+            log.warn("Kyuubi auth probe could not connect to Kyuubi at {}: {}. Continuing startup.", kyuubiRestUrl, detail);
         }
     }
 }

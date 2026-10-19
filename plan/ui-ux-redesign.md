@@ -1,6 +1,6 @@
 # Plan: làm lại UI/UX notebook và nối với backend
 
-Ngày: 2026-10-19. Trạng thái: chờ duyệt.
+Ngày: 2026-10-19. Trạng thái: ĐÃ HOÀN THÀNH (chờ triển khai lên cluster).
 
 ## 0. Hiện trạng
 

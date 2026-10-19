@@ -10,152 +10,771 @@
       --bg-main: #f8fafc;
       --bg-panel: #ffffff;
       --border-color: #e2e8f0;
+      --border-focus: #0284c7;
       --primary: #0284c7;
       --primary-hover: #0369a1;
       --text-main: #0f172a;
       --text-muted: #64748b;
       --cell-bg: #ffffff;
-      --code-bg: #f1f5f9;
+      --code-bg: #f8fafc;
+      --success: #16a34a;
+      --danger: #dc2626;
+      --warning: #d97706;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: var(--bg-main); color: var(--text-main); height: 100vh; display: flex; flex-direction: column; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: var(--bg-main);
+      color: var(--text-main);
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
 
-    header { height: 50px; background: var(--bg-panel); border-bottom: 1px solid var(--border-color); display: flex; align-items: center; justify-content: space-between; padding: 0 16px; }
-    .header-left { display: flex; align-items: center; gap: 12px; }
-    .nb-title { font-size: 16px; font-weight: 600; outline: none; padding: 4px 8px; border-radius: 4px; border: 1px solid transparent; }
-    .nb-title:focus { border-color: var(--primary); background: #f0f9ff; }
-    .badge { font-size: 11px; padding: 2px 6px; border-radius: 4px; background: #e0f2fe; color: #0369a1; font-weight: 600; }
+    /* Top Navigation Header */
+    header {
+      height: 48px;
+      background: var(--bg-panel);
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 16px;
+      flex-shrink: 0;
+      z-index: 100;
+      position: relative;
+    }
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
 
-    .header-actions { display: flex; align-items: center; gap: 8px; }
-    .btn { background: #f8fafc; border: 1px solid var(--border-color); padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 500; display: inline-flex; align-items: center; gap: 6px; }
-    .btn:hover { background: #f1f5f9; }
-    .btn-primary { background: var(--primary); color: white; border-color: var(--primary); }
-    .btn-primary:hover { background: var(--primary-hover); }
+    /* Notebook Selector Dropdown */
+    .nb-dropdown-container {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+    }
+    .nb-selector-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: transparent;
+      border: 1px solid transparent;
+      padding: 4px 8px;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    .nb-selector-btn:hover {
+      background: #f1f5f9;
+      border-color: var(--border-color);
+    }
+    .nb-icon {
+      color: var(--primary);
+      font-size: 15px;
+    }
+    .nb-title-input {
+      font-size: 14.5px;
+      font-weight: 600;
+      color: var(--text-main);
+      border: 1px solid transparent;
+      background: transparent;
+      outline: none;
+      padding: 2px 4px;
+      border-radius: 4px;
+      width: 220px;
+      transition: all 0.2s;
+    }
+    .nb-title-input:hover {
+      background: #f1f5f9;
+    }
+    .nb-title-input:focus {
+      background: #ffffff;
+      border-color: var(--primary);
+      box-shadow: 0 0 0 2px rgba(2, 132, 199, 0.15);
+    }
+    .nb-chevron-btn {
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: 11px;
+      padding: 4px 6px;
+    }
 
-    .main-container { flex: 1; display: flex; overflow: hidden; }
-    .sidebar { width: 220px; background: var(--bg-panel); border-right: 1px solid var(--border-color); display: flex; flex-direction: column; }
-    .sidebar-header { padding: 12px 16px; font-size: 12px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; border-bottom: 1px solid var(--border-color); }
-    .sidebar-list { list-style: none; padding: 8px; overflow-y: auto; flex: 1; }
-    .sidebar-item { padding: 8px 12px; border-radius: 4px; cursor: pointer; display: flex; align-items: center; gap: 8px; font-size: 13px; }
-    .sidebar-item:hover, .sidebar-item.active { background: #f1f5f9; color: var(--primary); font-weight: 500; }
+    .nb-dropdown-menu {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      margin-top: 4px;
+      width: 320px;
+      background: #ffffff;
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.05);
+      z-index: 200;
+      display: none;
+    }
+    .dropdown-search-box {
+      padding: 10px;
+      border-bottom: 1px solid var(--border-color);
+    }
+    .dropdown-search-box input {
+      width: 100%;
+      padding: 6px 10px;
+      border: 1px solid var(--border-color);
+      border-radius: 4px;
+      font-size: 13px;
+      outline: none;
+    }
+    .dropdown-search-box input:focus {
+      border-color: var(--primary);
+    }
+    .dropdown-list {
+      max-height: 260px;
+      overflow-y: auto;
+      padding: 6px 0;
+    }
+    .dropdown-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 7px 12px;
+      cursor: pointer;
+      font-size: 13px;
+      transition: background 0.15s;
+    }
+    .dropdown-item:hover {
+      background: #f1f5f9;
+    }
+    .dropdown-item.active {
+      background: #e0f2fe;
+      color: var(--primary);
+      font-weight: 600;
+    }
+    .dropdown-item-info {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      overflow: hidden;
+    }
+    .dropdown-item-name {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 220px;
+    }
+    .dropdown-empty-item {
+      padding: 12px;
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 12.5px;
+    }
+    .btn-icon-subtle {
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: 12px;
+      padding: 4px 6px;
+      border-radius: 4px;
+      opacity: 0.6;
+    }
+    .btn-icon-subtle:hover {
+      opacity: 1;
+      color: var(--danger);
+      background: #fee2e2;
+    }
 
-    .content-area { flex: 1; overflow-y: auto; padding: 24px 48px; max-width: 1100px; margin: 0 auto; width: 100%; }
-    .cell-container { display: flex; flex-direction: column; gap: 20px; }
+    /* Buttons */
+    .btn {
+      background: #ffffff;
+      border: 1px solid var(--border-color);
+      padding: 5px 10px;
+      border-radius: 5px;
+      cursor: pointer;
+      font-size: 12.5px;
+      font-weight: 500;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--text-main);
+      transition: all 0.15s;
+    }
+    .btn:hover {
+      background: #f1f5f9;
+      border-color: #cbd5e1;
+    }
+    .btn-primary {
+      background: var(--primary);
+      color: white;
+      border-color: var(--primary);
+    }
+    .btn-primary:hover {
+      background: var(--primary-hover);
+      border-color: var(--primary-hover);
+    }
+    .btn-danger {
+      color: var(--danger);
+    }
+    .btn-danger:hover {
+      background: #fee2e2;
+      border-color: #fca5a5;
+    }
 
-    .cell-card { background: var(--cell-bg); border: 1px solid var(--border-color); border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.02); overflow: hidden; }
-    .cell-card:focus-within { border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary); }
-    .cell-toolbar { background: #fafafa; border-bottom: 1px solid var(--border-color); padding: 4px 12px; display: flex; justify-content: space-between; align-items: center; }
-    .cell-status { font-size: 11px; color: var(--text-muted); font-family: monospace; }
-    .cell-actions { display: flex; gap: 6px; }
-    .cell-btn { background: none; border: none; cursor: pointer; padding: 4px 6px; font-size: 12px; border-radius: 3px; color: var(--text-muted); }
-    .cell-btn:hover { background: #e2e8f0; color: var(--text-main); }
-    .cell-btn.run { color: #16a34a; font-weight: bold; }
+    /* Badges & Indicators */
+    .kyuubi-status-badge {
+      font-size: 12px;
+      font-weight: 500;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 8px;
+      border-radius: 12px;
+      background: #f1f5f9;
+      color: var(--text-muted);
+    }
+    .kyuubi-status-badge.healthy {
+      background: #f0fdf4;
+      color: #15803d;
+    }
+    .kyuubi-status-badge.unhealthy {
+      background: #fef2f2;
+      color: #b91c1c;
+    }
+    .status-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: currentColor;
+    }
 
-    .cell-editor { padding: 12px; background: var(--code-bg); }
-    .cell-textarea { width: 100%; font-family: 'Consolas', 'Courier New', monospace; font-size: 14px; background: transparent; border: none; resize: vertical; min-height: 60px; outline: none; line-height: 1.4; color: #1e293b; }
+    /* Second Row: Action Toolbar */
+    .toolbar {
+      height: 40px;
+      background: #ffffff;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 16px;
+      flex-shrink: 0;
+      z-index: 90;
+    }
+    .toolbar-left {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .toolbar-right {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .save-status {
+      font-size: 12px;
+      color: var(--text-muted);
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .save-status.saving {
+      color: var(--primary);
+    }
+    .save-status.saved {
+      color: var(--text-muted);
+    }
+    .save-status.error {
+      color: var(--danger);
+      font-weight: 600;
+    }
 
-    .cell-output { padding: 12px; background: #ffffff; border-top: 1px solid var(--border-color); font-size: 13px; font-family: monospace; }
-    .cell-output pre { white-space: pre-wrap; word-break: break-all; }
+    /* Workspace Content Area */
+    .workspace {
+      flex: 1;
+      overflow-y: auto;
+      padding: 24px 16px 80px 16px;
+    }
+    .notebook-container {
+      max-width: 1040px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
 
-    .add-cell-bar { display: flex; justify-content: center; gap: 8px; margin: 12px 0; }
+    /* Cell Cards */
+    .cell-card {
+      background: var(--cell-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+      overflow: hidden;
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+    .cell-card:hover {
+      border-color: #cbd5e1;
+    }
+    .cell-card.active, .cell-card:focus-within {
+      border-color: var(--border-focus);
+      box-shadow: 0 0 0 1px var(--border-focus);
+    }
 
-    .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 1000; }
-    .modal-box { background: #fff; padding: 24px; border-radius: 8px; width: 360px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
-    .modal-box h3 { margin-bottom: 16px; font-size: 18px; }
-    .form-group { margin-bottom: 12px; }
-    .form-group label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 4px; color: var(--text-muted); }
-    .form-group input { width: 100%; padding: 8px 12px; border: 1px solid var(--border-color); border-radius: 4px; font-size: 14px; outline: none; }
-    .form-group input:focus { border-color: var(--primary); }
-    .error-msg { color: #ef4444; font-size: 12px; margin-top: 8px; display: none; }
+    .cell-toolbar {
+      background: #fafafa;
+      border-bottom: 1px solid var(--border-color);
+      padding: 4px 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      height: 34px;
+    }
+    .cell-toolbar-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .cell-lang-select {
+      font-size: 11.5px;
+      font-weight: 600;
+      color: var(--text-main);
+      background: #ffffff;
+      border: 1px solid var(--border-color);
+      border-radius: 4px;
+      padding: 2px 6px;
+      outline: none;
+      cursor: pointer;
+    }
+    .cell-exec-count {
+      font-family: monospace;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+    .cell-status-msg {
+      font-size: 11.5px;
+    }
+    .status-badge {
+      font-size: 11px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .status-badge.running {
+      background: #e0f2fe;
+      color: #0369a1;
+    }
+    .status-badge.succeeded {
+      background: #f0fdf4;
+      color: #15803d;
+    }
+    .status-badge.failed {
+      background: #fef2f2;
+      color: #b91c1c;
+    }
+    .status-badge.canceled {
+      background: #f1f5f9;
+      color: var(--text-muted);
+    }
+
+    /* Cell Actions (Only show on hover or active) */
+    .cell-actions {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.15s ease-in-out;
+    }
+    .cell-card:hover .cell-actions,
+    .cell-card.active .cell-actions {
+      opacity: 1;
+      pointer-events: auto;
+    }
+    .cell-btn {
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      padding: 4px 6px;
+      border-radius: 4px;
+      font-size: 12px;
+      transition: all 0.15s;
+    }
+    .cell-btn:hover {
+      background: #e2e8f0;
+      color: var(--text-main);
+    }
+    .cell-btn.run {
+      color: var(--success);
+    }
+    .cell-btn.run:hover {
+      background: #dcfce7;
+      color: #15803d;
+    }
+    .cell-btn.delete:hover {
+      color: var(--danger);
+      background: #fee2e2;
+    }
+
+    /* Editor Area */
+    .cell-editor {
+      padding: 10px 14px;
+      background: var(--code-bg);
+    }
+    .cell-textarea {
+      width: 100%;
+      font-family: 'Consolas', 'Menlo', 'Monaco', 'Courier New', monospace;
+      font-size: 13.5px;
+      line-height: 1.5;
+      background: transparent;
+      border: none;
+      resize: none;
+      min-height: 48px;
+      outline: none;
+      color: #1e293b;
+      display: block;
+      overflow: hidden;
+    }
+
+    /* Output Area */
+    .cell-output-area {
+      border-top: 1px solid var(--border-color);
+      background: #ffffff;
+      font-size: 13px;
+    }
+    .cell-output-area:empty {
+      display: none;
+    }
+
+    /* Table Output */
+    .table-output-container {
+      padding: 8px 14px 14px 14px;
+    }
+    .output-meta {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 11.5px;
+      color: var(--text-muted);
+      margin-bottom: 8px;
+    }
+    .meta-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .badge-truncated {
+      color: var(--warning);
+      font-weight: 500;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .table-scroll {
+      max-height: 380px;
+      overflow: auto;
+      border: 1px solid var(--border-color);
+      border-radius: 4px;
+    }
+    .result-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12.5px;
+      font-family: 'Consolas', monospace;
+    }
+    .result-table thead {
+      position: sticky;
+      top: 0;
+      background: #f1f5f9;
+      z-index: 10;
+    }
+    .result-table th {
+      padding: 6px 12px;
+      text-align: left;
+      font-weight: 600;
+      color: var(--text-main);
+      border-bottom: 1px solid var(--border-color);
+      border-right: 1px solid var(--border-color);
+      white-space: nowrap;
+    }
+    .result-table td {
+      padding: 6px 12px;
+      border-bottom: 1px solid #f1f5f9;
+      border-right: 1px solid #f1f5f9;
+      white-space: nowrap;
+      color: #334155;
+    }
+    .result-table tr:hover {
+      background: #f8fafc;
+    }
+    .row-num-header, .row-num {
+      width: 40px;
+      text-align: center;
+      color: var(--text-muted);
+      background: #f8fafc;
+      font-size: 11px;
+    }
+    .cell-null { color: #94a3b8; font-style: italic; }
+    .cell-number { color: #0369a1; }
+    .cell-bool { color: #7c3aed; }
+
+    /* Stream Output */
+    .stream-output-container {
+      padding: 10px 14px;
+    }
+    .stream-text {
+      font-family: 'Consolas', 'Courier New', monospace;
+      font-size: 12.5px;
+      line-height: 1.45;
+      white-space: pre-wrap;
+      word-break: break-all;
+      color: #334155;
+    }
+
+    /* Error Output */
+    .error-output-card {
+      padding: 12px 14px;
+      background: #fef2f2;
+      border-left: 4px solid var(--danger);
+    }
+    .error-header {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      color: #b91c1c;
+      font-size: 13px;
+      font-family: monospace;
+      line-height: 1.4;
+    }
+    .error-icon {
+      font-size: 14px;
+      margin-top: 2px;
+    }
+    .error-actions {
+      display: flex;
+      gap: 12px;
+      margin-top: 8px;
+    }
+    .btn-link {
+      background: none;
+      border: none;
+      color: var(--primary);
+      cursor: pointer;
+      font-size: 12px;
+      padding: 0;
+      text-decoration: underline;
+    }
+    .btn-link:hover {
+      color: var(--primary-hover);
+    }
+    .error-traceback {
+      margin-top: 10px;
+      padding: 10px;
+      background: #1e293b;
+      color: #f8fafc;
+      border-radius: 4px;
+      max-height: 240px;
+      overflow-y: auto;
+      font-size: 12px;
+      font-family: monospace;
+    }
+
+    /* Add Cell Bar */
+    .add-cell-bar {
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+      margin-top: 8px;
+    }
+
+    /* Modals */
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(15, 23, 42, 0.45);
+      backdrop-filter: blur(2px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+    }
+    .modal-box {
+      background: #ffffff;
+      padding: 24px;
+      border-radius: 10px;
+      width: 380px;
+      box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04);
+    }
+    .modal-box h3 {
+      margin-bottom: 16px;
+      font-size: 17px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .form-group {
+      margin-bottom: 14px;
+    }
+    .form-group label {
+      display: block;
+      font-size: 12.5px;
+      font-weight: 500;
+      margin-bottom: 5px;
+      color: var(--text-muted);
+    }
+    .form-group input {
+      width: 100%;
+      padding: 8px 12px;
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      font-size: 13.5px;
+      outline: none;
+    }
+    .form-group input:focus {
+      border-color: var(--primary);
+    }
+    .error-msg {
+      color: var(--danger);
+      font-size: 12px;
+      margin-top: 6px;
+      display: none;
+    }
+
+    .log-modal-box {
+      width: 800px;
+      max-width: 90vw;
+      display: flex;
+      flex-direction: column;
+      max-height: 80vh;
+      padding: 20px;
+    }
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+      border-bottom: 1px solid var(--border-color);
+      padding-bottom: 8px;
+    }
+    .modal-close {
+      background: none;
+      border: none;
+      font-size: 20px;
+      cursor: pointer;
+      color: var(--text-muted);
+    }
+    .modal-body {
+      flex: 1;
+      overflow-y: auto;
+      background: #0f172a;
+      color: #f1f5f9;
+      padding: 12px;
+      border-radius: 6px;
+      font-family: monospace;
+      font-size: 12px;
+      white-space: pre-wrap;
+    }
+    .modal-footer {
+      margin-top: 12px;
+      display: flex;
+      justify-content: flex-end;
+    }
   </style>
 </head>
 <body>
 
+  <!-- Top Navigation Header -->
   <header>
     <div class="header-left">
-      <i class="fa-solid fa-book-open" style="color: var(--primary);"></i>
-      <div class="nb-title" contenteditable="true" id="notebookTitle">lakehouse-revenue-analysis</div>
-      <span class="badge">PySpark & SQL</span>
-      <span id="runtimeStatus" style="font-size: 12px; color: #16a34a;"><i class="fa-solid fa-circle"></i> Spark Engine Ready</span>
+      <!-- Notebook Selector Dropdown -->
+      <div class="nb-dropdown-container" id="nbDropdownContainer">
+        <div class="nb-selector-btn">
+          <i class="fa-solid fa-book-bookmark nb-icon"></i>
+          <input type="text" class="nb-title-input" id="notebookTitleInput"
+                 title="Nhấn để sửa tên notebook"
+                 onblur="renameCurrentNotebook(this.value)"
+                 onkeydown="if(event.key==='Enter') this.blur();">
+          <button class="nb-chevron-btn" onclick="toggleNotebookDropdown()" title="Chọn notebook khác">
+            <i class="fa-solid fa-chevron-down"></i>
+          </button>
+        </div>
+
+        <div class="nb-dropdown-menu" id="nbDropdownMenu">
+          <div class="dropdown-search-box">
+            <input type="text" id="nbSearchInput" placeholder="Tìm kiếm notebook..." oninput="onSearchNotebook(this.value)">
+          </div>
+          <div class="dropdown-list" id="nbDropdownList">
+            <!-- Rendered by notebook.js -->
+          </div>
+          <div style="padding: 8px 12px; border-top: 1px solid var(--border-color);">
+            <button class="btn btn-primary" style="width: 100%; justify-content: center;" onclick="createNewNotebook()">
+              <i class="fa-solid fa-plus"></i> Tạo notebook mới
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <button class="btn" onclick="createNewNotebook()" title="Tạo notebook mới"><i class="fa-solid fa-plus"></i> Mới</button>
+      <button class="btn" onclick="triggerImportIpynb()" title="Nhập notebook từ file .ipynb"><i class="fa-solid fa-file-import"></i> Nhập</button>
+      <button class="btn" onclick="exportCurrentNotebook()" title="Xuất notebook sang định dạng .ipynb"><i class="fa-solid fa-file-export"></i> Xuất</button>
+      <input type="file" id="ipynbFileInput" accept=".ipynb" style="display:none;" onchange="handleIpynbFileSelected(this)">
     </div>
-    <div class="header-actions">
-      <span id="userGreeting" style="font-size: 13px; font-weight: 500; margin-right: 8px; color: var(--text-muted);"></span>
-      <button class="btn" id="logoutBtn" style="display:none;" onclick="handleLogout()"><i class="fa-solid fa-arrow-right-from-bracket"></i> Đăng xuất</button>
-      <button class="btn" onclick="exportIpynb()"><i class="fa-solid fa-file-export"></i> Export .ipynb</button>
-      <button class="btn" onclick="restartRuntime()"><i class="fa-solid fa-rotate-right"></i> Restart Engine</button>
-      <button class="btn btn-primary" onclick="runAllCells()"><i class="fa-solid fa-play"></i> Run All</button>
+
+    <div class="header-right">
+      <span class="kyuubi-status-badge" id="kyuubiStatusIndicator">
+        <span class="status-dot"></span> Kyuubi: Đang kết nối...
+      </span>
+      <span id="userGreeting" style="font-size: 13px; font-weight: 500; color: var(--text-muted);"></span>
+      <button class="btn btn-danger" id="logoutBtn" style="display:none;" onclick="handleLogout()" title="Đăng xuất">
+        <i class="fa-solid fa-power-off"></i>
+      </button>
     </div>
   </header>
 
-  <div class="main-container">
-    <div class="sidebar">
-      <div class="sidebar-header">Workspace</div>
-      <ul class="sidebar-list">
-        <li class="sidebar-item active"><i class="fa-regular fa-file-code"></i> revenue-analysis.ipynb</li>
-        <li class="sidebar-item"><i class="fa-regular fa-file-code"></i> user-churn-model.ipynb</li>
-        <li class="sidebar-item"><i class="fa-regular fa-folder"></i> production-jobs</li>
-      </ul>
+  <!-- Second Row Action Toolbar -->
+  <div class="toolbar">
+    <div class="toolbar-left">
+      <button class="btn btn-primary" onclick="runAllCells()" title="Chạy tuần tự toàn bộ các cell">
+        <i class="fa-solid fa-play"></i> Chạy tất cả
+      </button>
+      <button class="btn" onclick="stopExecution()" title="Dừng lệnh đang thực thi">
+        <i class="fa-solid fa-stop"></i> Dừng
+      </button>
+      <button class="btn" onclick="restartSession()" title="Khởi động lại Spark session">
+        <i class="fa-solid fa-rotate-right"></i> Khởi động lại session
+      </button>
     </div>
+    <div class="toolbar-right">
+      <span class="save-status" id="saveStatusIndicator">
+        <i class="fa-solid fa-check"></i> Đã lưu
+      </span>
+    </div>
+  </div>
 
-    <div class="content-area">
-      <div class="cell-container" id="cellContainer">
-
-        <div class="cell-card" data-id="cell-1">
-          <div class="cell-toolbar">
-            <span class="cell-status">In [1] · SQL</span>
-            <div class="cell-actions">
-              <button class="cell-btn run" onclick="runCell('cell-1')"><i class="fa-solid fa-play"></i> Run</button>
-              <button class="cell-btn" onclick="deleteCell('cell-1')"><i class="fa-solid fa-trash"></i></button>
-            </div>
-          </div>
-          <div class="cell-editor">
-            <textarea class="cell-textarea" rows="2">SELECT date, sum(amount) as total_revenue
-FROM iceberg.sales.orders
-GROUP BY date ORDER BY date DESC LIMIT 10;</textarea>
-          </div>
-          <div class="cell-output">
-            <pre>+------------+---------------+
-|        date|  total_revenue|
-+------------+---------------+
-|  2026-10-12|     1250000.00|
-|  2026-10-11|      984500.50|
-|  2026-10-10|     1120000.00|
-+------------+---------------+</pre>
-          </div>
-        </div>
-
-        <div class="cell-card" data-id="cell-2">
-          <div class="cell-toolbar">
-            <span class="cell-status">In [2] · Python (PySpark)</span>
-            <div class="cell-actions">
-              <button class="cell-btn run" onclick="runCell('cell-2')"><i class="fa-solid fa-play"></i> Run</button>
-              <button class="cell-btn" onclick="deleteCell('cell-2')"><i class="fa-solid fa-trash"></i></button>
-            </div>
-          </div>
-          <div class="cell-editor">
-            <textarea class="cell-textarea" rows="3">df = spark.table("iceberg.sales.orders")
-print(f"Total row count: {df.count()}")
-df.printSchema()</textarea>
-          </div>
-          <div class="cell-output">
-            <pre>Total row count: 4210984
-root
- |-- order_id: string (nullable = false)
- |-- date: date (nullable = true)
- |-- amount: decimal(18,2) (nullable = true)</pre>
-          </div>
-        </div>
-
+  <!-- Main Workspace Area -->
+  <div class="workspace">
+    <div class="notebook-container">
+      <div id="cellContainer" class="notebook-container" style="gap: 16px;">
+        <!-- Cells rendered dynamically by cells.js -->
       </div>
 
       <div class="add-cell-bar">
-        <button class="btn" onclick="addCell('SQL')"><i class="fa-solid fa-plus"></i> Code (SQL)</button>
-        <button class="btn" onclick="addCell('PYTHON')"><i class="fa-solid fa-plus"></i> Code (Python)</button>
-        <button class="btn" onclick="addCell('MARKDOWN')"><i class="fa-solid fa-plus"></i> Text (Markdown)</button>
+        <button class="btn" onclick="addCell('SQL')"><i class="fa-solid fa-plus"></i> SQL</button>
+        <button class="btn" onclick="addCell('PYTHON')"><i class="fa-solid fa-plus"></i> PySpark</button>
       </div>
     </div>
   </div>
 
+  <!-- Login Modal (cho chế độ no-oidc và ldap) -->
   <div class="modal-backdrop" id="loginModal" style="display:none;">
     <div class="modal-box">
       <h3 id="loginTitle"><i class="fa-solid fa-lock" style="color: var(--primary);"></i> Đăng nhập Lakehouse</h3>
@@ -165,7 +784,8 @@ root
       </div>
       <div class="form-group">
         <label for="passwordInput">Mật khẩu</label>
-        <input type="password" id="passwordInput" placeholder="password" autocomplete="current-password">
+        <input type="password" id="passwordInput" placeholder="password" autocomplete="current-password"
+               onkeydown="if(event.key==='Enter') submitLogin();">
       </div>
       <div class="error-msg" id="loginError">Đăng nhập thất bại. Vui lòng kiểm tra lại.</div>
       <div style="margin-top: 16px; display: flex; justify-content: flex-end;">
@@ -174,249 +794,13 @@ root
     </div>
   </div>
 
+  <!-- Script Modules (100% self-hosted, offline) -->
   <script src="vendor/oidc-client-ts.min.js"></script>
-  <script>
-    let authConfig = { mode: "oidc" };
-    let userManager = null;
-
-    function getCookie(name) {
-      const v = document.cookie.match('(^|;) ?' + name + '=([^;]*)(;|$)');
-      return v ? v[2] : null;
-    }
-
-    function initOidcUserManager() {
-      if (!window.oidc || !authConfig || authConfig.mode !== 'oidc') return null;
-      if (!userManager && authConfig.issuer && authConfig.clientId) {
-        const scopes = Array.isArray(authConfig.scopes) && authConfig.scopes.length > 0
-          ? authConfig.scopes.join(' ')
-          : 'openid profile';
-
-        userManager = new oidc.UserManager({
-          authority: authConfig.issuer,
-          client_id: authConfig.clientId,
-          redirect_uri: window.location.origin + oidcRedirectPath(),
-          post_logout_redirect_uri: window.location.origin + '/',
-          response_type: 'code',
-          scope: scopes,
-          automaticSilentRenew: true,
-          userStore: new oidc.WebStorageStateStore({ store: window.sessionStorage })
-        });
-        userManager.events.addUserLoaded(user => { window.currentUser = user; });
-        userManager.events.addUserUnloaded(() => { window.currentUser = null; });
-      }
-      return userManager;
-    }
-
-    function oidcRedirectPath() {
-      const p = authConfig.redirectPath;
-      return typeof p === 'string' && p.startsWith('/') && !p.startsWith('//') ? p : '/auth/callback';
-    }
-
-    async function api(path, opts = {}, retryOn401 = true) {
-      const options = { ...opts };
-      options.headers = { ...(options.headers || {}) };
-
-      const method = (options.method || 'GET').toUpperCase();
-      if (method !== 'GET' && method !== 'HEAD') {
-        const xsrf = getCookie('XSRF-TOKEN');
-        if (xsrf) {
-          options.headers['X-XSRF-TOKEN'] = xsrf;
-        }
-      }
-
-      if (window.currentUser && window.currentUser.access_token) {
-        options.headers['Authorization'] = `Bearer ${window.currentUser.access_token}`;
-      }
-
-      let res = await fetch(path, options);
-
-      if (res.status === 401 && authConfig.mode === 'oidc' && retryOn401 && userManager) {
-        try {
-          const renewedUser = await userManager.signinSilent();
-          if (renewedUser) {
-            window.currentUser = renewedUser;
-            options.headers['Authorization'] = `Bearer ${renewedUser.access_token}`;
-            return await fetch(path, options);
-          }
-        } catch (silentErr) {
-          console.warn("signinSilent failed:", silentErr);
-        }
-
-        if (!sessionStorage.getItem('oidc_redirect_attempt')) {
-          sessionStorage.setItem('oidc_redirect_attempt', '1');
-          await userManager.signinRedirect();
-        } else {
-          console.error("Authentication failed: oidc_redirect_attempt already set");
-          document.getElementById('loginTitle').innerText = 'Đăng nhập OIDC không thành công';
-          const errEl = document.getElementById('loginError');
-          errEl.innerText = 'Phiên đăng nhập hết hạn hoặc không hợp lệ. Vui lòng tải lại trang để thử lại.';
-          errEl.style.display = 'block';
-          document.getElementById('loginModal').style.display = 'flex';
-        }
-      }
-
-      return res;
-    }
-
-    async function checkAuthStatus() {
-      try {
-        const confRes = await api('/api/v1/auth/config', {}, false);
-        if (confRes.ok) {
-          authConfig = await confRes.json();
-        }
-      } catch (e) {
-        console.warn("Không thể tải /auth/config:", e);
-      }
-
-      if (authConfig.mode === 'oidc') {
-        initOidcUserManager();
-
-        if (window.location.pathname === oidcRedirectPath() && userManager) {
-          try {
-            const user = await userManager.signinRedirectCallback();
-            window.currentUser = user;
-            sessionStorage.removeItem('oidc_redirect_attempt');
-            window.history.replaceState({}, document.title, '/');
-          } catch (cbErr) {
-            console.error("Lỗi xử lý callback OIDC:", cbErr);
-            document.getElementById('loginTitle').innerText = 'Lỗi xác thực OIDC';
-            const errEl = document.getElementById('loginError');
-            errEl.innerText = 'Không thể hoàn tất đăng nhập OIDC: ' + (cbErr.message || cbErr);
-            errEl.style.display = 'block';
-            document.getElementById('loginModal').style.display = 'flex';
-            return;
-          }
-        }
-
-        if (userManager && !window.currentUser) {
-          try {
-            const storedUser = await userManager.getUser();
-            if (storedUser && !storedUser.expired) {
-              window.currentUser = storedUser;
-            }
-          } catch (e) {
-            console.warn("Không thể đọc user từ storage:", e);
-          }
-        }
-      }
-
-      try {
-        const meRes = await api('/api/v1/me', {}, false);
-        if (meRes.ok) {
-          sessionStorage.removeItem('oidc_redirect_attempt');
-          const user = await meRes.json();
-          document.getElementById('userGreeting').innerText = `👤 ${user.username || user.userId || 'User'}`;
-          document.getElementById('logoutBtn').style.display = 'inline-flex';
-          document.getElementById('loginModal').style.display = 'none';
-        } else if (meRes.status === 401) {
-          if (authConfig.mode === 'oidc' && userManager) {
-            if (!sessionStorage.getItem('oidc_redirect_attempt')) {
-              sessionStorage.setItem('oidc_redirect_attempt', '1');
-              await userManager.signinRedirect();
-            } else {
-              document.getElementById('loginTitle').innerText = 'Đăng nhập OIDC không thành công';
-              const errEl = document.getElementById('loginError');
-              errEl.innerText = 'Phiên đăng nhập hết hạn hoặc không hợp lệ. Vui lòng tải lại trang để thử lại.';
-              errEl.style.display = 'block';
-              document.getElementById('loginModal').style.display = 'flex';
-            }
-          } else {
-            document.getElementById('loginTitle').innerText = authConfig.mode === 'ldap' ? 'Đăng nhập LDAP Lakehouse' : 'Đăng nhập Notebook';
-            document.getElementById('loginModal').style.display = 'flex';
-          }
-        }
-      } catch (err) {
-        console.warn("Không thể kiểm tra /me:", err);
-      }
-    }
-
-    async function submitLogin() {
-      const username = document.getElementById('usernameInput').value;
-      const password = document.getElementById('passwordInput').value;
-      const errorDiv = document.getElementById('loginError');
-      errorDiv.style.display = 'none';
-
-      try {
-        const res = await api('/api/v1/auth/login', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ username, password })
-        }, false);
-
-        if (res.ok) {
-          document.getElementById('loginModal').style.display = 'none';
-          checkAuthStatus();
-        } else {
-          errorDiv.innerText = 'Đăng nhập thất bại. Vui lòng kiểm tra lại.';
-          errorDiv.style.display = 'block';
-        }
-      } catch (e) {
-        errorDiv.innerText = "Lỗi kết nối tới máy chủ";
-        errorDiv.style.display = 'block';
-      }
-    }
-
-    async function handleLogout() {
-      if (authConfig.mode === 'oidc' && userManager) {
-        sessionStorage.removeItem('oidc_redirect_attempt');
-        await userManager.signoutRedirect();
-      } else {
-        await api('/api/v1/auth/logout', { method: 'POST' }, false);
-        window.location.reload();
-      }
-    }
-
-    window.addEventListener('DOMContentLoaded', checkAuthStatus);
-
-    async function runCell(cellId) {
-      const card = document.querySelector(`[data-id="${cellId}"]`);
-      const output = card.querySelector('.cell-output pre');
-      output.innerText = "Running statement on Spark engine via Kyuubi...";
-      setTimeout(() => {
-        output.innerText = "Query executed successfully.\nResult: 1 row(s) returned.\nFinished in 0.42s.";
-      }, 700);
-    }
-
-    function runAllCells() {
-      document.querySelectorAll('.cell-card').forEach(c => runCell(c.getAttribute('data-id')));
-    }
-
-    function addCell(lang) {
-      const container = document.getElementById('cellContainer');
-      const id = 'cell-' + Date.now();
-      const div = document.createElement('div');
-      div.className = 'cell-card';
-      div.setAttribute('data-id', id);
-      div.innerHTML = `
-        <div class="cell-toolbar">
-          <span class="cell-status">[ ] · ${lang}</span>
-          <div class="cell-actions">
-            <button class="cell-btn run" onclick="runCell('${id}')"><i class="fa-solid fa-play"></i> Run</button>
-            <button class="cell-btn" onclick="deleteCell('${id}')"><i class="fa-solid fa-trash"></i></button>
-          </div>
-        </div>
-        <div class="cell-editor">
-          <textarea class="cell-textarea" rows="2" placeholder="Write ${lang} code here..."></textarea>
-        </div>
-        <div class="cell-output"><pre></pre></div>
-      `;
-      container.appendChild(div);
-    }
-
-    function deleteCell(id) {
-      const el = document.querySelector(`[data-id="${id}"]`);
-      if (el) el.remove();
-    }
-
-    function exportIpynb() {
-      window.location.href = '/api/v1/notebooks/sample:export';
-    }
-
-    function restartRuntime() {
-      if (confirm("Restart runtime sẽ xóa toàn bộ biến Python trong Spark engine. Bạn có muốn tiếp tục?")) {
-        alert("Spark engine session đã được khởi động lại.");
-      }
-    }
-  </script>
+  <script src="app/api.js"></script>
+  <script src="app/render.js"></script>
+  <script src="app/notebook.js"></script>
+  <script src="app/cells.js"></script>
+  <script src="app/execution.js"></script>
+  <script src="app/main.js"></script>
 </body>
 </html>
