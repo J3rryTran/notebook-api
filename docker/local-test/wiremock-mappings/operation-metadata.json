@@ -1,0 +1,13 @@
+{
+  "request": {
+    "method": "GET",
+    "urlPathPattern": "/api/v1/operations/.*/resultsetmetadata"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "body": "{\"columns\":[{\"columnName\":\"id\",\"dataType\":\"INT\"},{\"columnName\":\"status\",\"dataType\":\"STRING\"},{\"columnName\":\"message\",\"dataType\":\"STRING\"}]}"
+  }
+}

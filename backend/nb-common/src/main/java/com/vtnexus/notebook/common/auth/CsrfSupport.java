@@ -26,6 +26,7 @@ public final class CsrfSupport {
         http.csrf(csrf -> csrf
                 .csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
                 .csrfTokenRequestHandler(new CsrfTokenRequestAttributeHandler())
+                .sessionAuthenticationStrategy(new org.springframework.security.web.authentication.session.NullAuthenticatedSessionStrategy())
                 .ignoringRequestMatchers("/internal/**"));
         http.addFilterAfter(new CsrfCookieFilter(), CsrfFilter.class);
     }

@@ -1,0 +1,13 @@
+{
+  "request": {
+    "method": "GET",
+    "urlPathPattern": "/api/v1/operations/.*/rowset"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "body": "{\"rows\":[{\"fields\":[{\"value\":1},{\"value\":\"SUCCESS\"},{\"value\":\"Localhost test query executed\"}]},{\"fields\":[{\"value\":2},{\"value\":\"OK\"},{\"value\":\"Security Bypassed Successfully\"}]}]}"
+  }
+}

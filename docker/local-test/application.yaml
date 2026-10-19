@@ -1,0 +1,25 @@
+spring:
+  datasource:
+    url: jdbc:mariadb://test-mariadb:3306/test?useUnicode=true&characterEncoding=utf8
+    username: notebook_api
+    password: devpassword
+  jpa:
+    hibernate:
+      ddl-auto: update
+
+notebook:
+  internal-token: "local-dev-internal-token-32-chars-long!"
+  encryption-key: "MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MDE="
+  admins:
+    - admin
+  auth:
+    mode: no-oidc
+    allow-unverified: true
+    session-ttl: 24h
+
+logging:
+  level:
+    root: INFO
+
+kyuubi:
+  rest-url: http://test-kyuubi-mock:8080

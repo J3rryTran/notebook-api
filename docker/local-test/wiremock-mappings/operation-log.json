@@ -1,0 +1,13 @@
+{
+  "request": {
+    "method": "GET",
+    "urlPathPattern": "/api/v1/operations/.*/log"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "body": "{\"logRowSet\":[\"INFO: Starting statement execution on mock Kyuubi\",\"INFO: Finished statement execution successfully\"]}"
+  }
+}

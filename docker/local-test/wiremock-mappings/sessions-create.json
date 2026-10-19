@@ -1,0 +1,13 @@
+{
+  "request": {
+    "method": "POST",
+    "urlPath": "/api/v1/sessions"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "body": "{\"identifier\":\"mock-session-001\",\"kyuubiInstance\":\"test-kyuubi-mock:8080\"}"
+  }
+}
