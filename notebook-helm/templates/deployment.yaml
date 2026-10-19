@@ -51,19 +51,16 @@ spec:
             preStop:
               exec:
                 command: ["sleep", "{{ .Values.preStopSleepSeconds }}"]
-          startupProbe:
-            exec:
-              command: ["/app/healthcheck.sh", "startup"]
-            periodSeconds: {{ .Values.probes.startup.periodSeconds }}
-            failureThreshold: {{ .Values.probes.startup.failureThreshold }}
           readinessProbe:
             exec:
               command: ["/app/healthcheck.sh", "readiness"]
+            initialDelaySeconds: {{ .Values.probes.readiness.initialDelaySeconds }}
             periodSeconds: {{ .Values.probes.readiness.periodSeconds }}
             failureThreshold: {{ .Values.probes.readiness.failureThreshold }}
           livenessProbe:
             exec:
               command: ["/app/healthcheck.sh", "liveness"]
+            initialDelaySeconds: {{ .Values.probes.liveness.initialDelaySeconds }}
             periodSeconds: {{ .Values.probes.liveness.periodSeconds }}
             failureThreshold: {{ .Values.probes.liveness.failureThreshold }}
           resources:
