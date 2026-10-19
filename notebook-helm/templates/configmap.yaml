@@ -86,7 +86,7 @@ data:
       idle-session-timeout: {{ .Values.kyuubi.idleSessionTimeout }}
       idle-reaper-interval: {{ int64 .Values.kyuubi.idleReaperIntervalMs }}
       pin-to-instance: {{ .Values.kyuubi.pinToInstance }}
-      allowed-session-config-keys: {{ toJson .Values.kyuubi.allowedSessionConfigKeys }}
+      allowed-session-config-keys: {{ default (list) .Values.kyuubi.allowedSessionConfigKeys | toJson }}
       {{- if .Values.kyuubi.extraSessionConfigs }}
       session-configs:
         {{- toYaml .Values.kyuubi.extraSessionConfigs | nindent 8 }}

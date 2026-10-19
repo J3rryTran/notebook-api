@@ -38,6 +38,9 @@ public class KyuubiRestClient {
             RestTemplateBuilder builder,
             ObjectMapper objectMapper) {
         String baseUrl = kyuubiProperties.getRestUrl();
+        if (baseUrl == null || baseUrl.isBlank()) {
+            throw new IllegalStateException("kyuubi.rest-url is required");
+        }
         this.defaultBaseUrl = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
         this.pinToInstance = kyuubiProperties.isPinToInstance();
         this.allowedSessionConfigKeys = kyuubiProperties.getAllowedSessionConfigKeys() != null

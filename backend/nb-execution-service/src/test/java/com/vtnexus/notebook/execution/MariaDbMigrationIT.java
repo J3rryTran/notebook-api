@@ -52,6 +52,7 @@ class MariaDbMigrationIT {
         registry.add("spring.datasource.url", mariaDB::getJdbcUrl);
         registry.add("spring.datasource.username", mariaDB::getUsername);
         registry.add("spring.datasource.password", mariaDB::getPassword);
+        registry.add("kyuubi.rest-url", () -> "http://kyuubi.invalid:10099");
         registry.add("notebook.auth.mode", () -> "oidc");
         registry.add("notebook.internalToken", () -> "secret-token-it");
         registry.add("notebook.internal-token", () -> "secret-token-it");

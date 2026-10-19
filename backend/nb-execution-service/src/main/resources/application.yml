@@ -22,10 +22,6 @@ management:
 spring:
   application:
     name: nb-execution-service
-
-logging:
-  level:
-    root: INFO
   datasource:
     password: ${SPRING_DATASOURCE_PASSWORD:}
     hikari:
@@ -39,6 +35,10 @@ logging:
       hibernate:
         jdbc:
           time_zone: UTC
+
+logging:
+  level:
+    root: INFO
 
 notebook:
   internal-token: ${NOTEBOOK_INTERNAL_TOKEN}

@@ -17,7 +17,7 @@ import java.util.Map;
 @ConfigurationProperties(prefix = "kyuubi")
 public class KyuubiProperties {
 
-    private String restUrl = "http://localhost:10099";
+    private String restUrl = "";
     private Duration connectTimeout = Duration.ofSeconds(10);
     private Duration requestTimeout = Duration.ofSeconds(60);
     private Duration idleSessionTimeout = Duration.ofMinutes(30);
