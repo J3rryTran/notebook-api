@@ -57,6 +57,7 @@ notebook:
       service-client-id: notebook-api
       service-client-secret: ${NOTEBOOK_OIDC_CLIENT_SECRET:}
     ldap:
+      bind-password: ${NOTEBOOK_LDAP_BIND_PASSWORD:}
       service-account:
         username: ""
         password: ${NOTEBOOK_LDAP_SERVICE_ACCOUNT_PASSWORD:}
