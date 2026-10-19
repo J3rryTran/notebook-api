@@ -86,6 +86,7 @@ auth:
     baseDN: "cn=accounts,dc=lab,dc=com"
     domain: ""
     binddn: "uid=kyuubi,cn=users,cn=accounts,dc=lab,dc=com"
+    bindpw: ""
     guidKey: uid
     userDNPattern: "uid=%s,cn=users,cn=accounts,dc=lab,dc=com"
     groupDNPattern: "cn=%s,cn=groups,cn=accounts,dc=lab,dc=com"
@@ -103,6 +104,7 @@ auth:
       type: PEM
     serviceAccount:
       username: kyuubi
+      password: ""
 
   session:
     ttl: 8h

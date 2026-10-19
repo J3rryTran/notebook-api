@@ -11,9 +11,11 @@ Notebook {{ .Chart.AppVersion }} (chart {{ .Chart.Version }}, contract 2), auth.
    - {{ .Values.secretKeys.authEncryptionKey }} (32 bytes base64)
 {{- end }}
 {{- if eq .Values.auth.mode "ldap" }}
+{{- if not .Values.auth.ldap.bindpw }}
    - {{ .Values.secretKeys.ldapServiceAccountPassword }} (mật khẩu LDAP của {{ .Values.auth.ldap.serviceAccount.username }})
 {{- if .Values.auth.ldap.binddn }}
    - {{ .Values.secretKeys.ldapBindPassword }} (bindpw của {{ .Values.auth.ldap.binddn }})
+{{- end }}
 {{- end }}
 {{- if .Values.auth.ldap.trustStore.enabled }}
    - {{ .Values.secretKeys.ldapTruststore }} (file nhị phân truststore mount vào container)

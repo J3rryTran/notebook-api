@@ -127,3 +127,9 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 
 {{- end }}
+
+{{- define "notebook.ldapBindpw" -}}
+{{- if eq .Values.auth.mode "ldap" -}}
+{{- (.Values.auth.ldap | default dict).bindpw | default "" -}}
+{{- end -}}
+{{- end }}

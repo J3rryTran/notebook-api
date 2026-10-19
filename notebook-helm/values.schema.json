@@ -180,6 +180,9 @@
               "properties": {
                 "username": {
                   "type": "string"
+                },
+                "password": {
+                  "type": "string"
                 }
               }
             },
@@ -190,6 +193,9 @@
               "type": "string"
             },
             "binddn": {
+              "type": "string"
+            },
+            "bindpw": {
               "type": "string"
             },
             "guidKey": {
