@@ -270,6 +270,9 @@ public class NotebookExecutionController {
                 com.fasterxml.jackson.databind.JsonNode tableNode = copy.at("/data/application~1vnd.notebook.table+json");
                 if (tableNode.isObject()) {
                     ((com.fasterxml.jackson.databind.node.ObjectNode) tableNode).set("rows", slicedRows);
+                    ((com.fasterxml.jackson.databind.node.ObjectNode) tableNode).put("totalRows", total);
+                    ((com.fasterxml.jackson.databind.node.ObjectNode) tableNode).put("offset", from);
+                    ((com.fasterxml.jackson.databind.node.ObjectNode) tableNode).put("limit", Math.max(limit, 0));
                 }
                 return ResponseEntity.ok(objectMapper.writeValueAsString(copy));
             }

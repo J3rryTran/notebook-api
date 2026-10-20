@@ -65,6 +65,8 @@ public class NotebookDocument {
 
         private List<Object> outputs;
 
+        private Integer executionCount;
+
         private final Map<String, Object> extraCellProperties = new LinkedHashMap<>();
 
         @JsonAnySetter

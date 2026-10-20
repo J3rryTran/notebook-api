@@ -114,7 +114,7 @@ class ExecutionServiceAutoOutputTest {
         when(runRepository.findById("run-1")).thenReturn(Optional.of(run));
         when(runRepository.findByIdForUpdate("run-1")).thenReturn(Optional.of(run));
 
-        JsonNode eventNode = objectMapper.readTree("{\"state\": \"FINISHED\"}");
+        JsonNode eventNode = objectMapper.readTree("{\"state\": \"FINISHED_STATE\"}");
         when(kyuubiRestClient.getOperationEvent(eq("op-sql-1"), any(), any())).thenReturn(eventNode);
 
         JsonNode metaNode = objectMapper.readTree("""
@@ -200,6 +200,40 @@ class ExecutionServiceAutoOutputTest {
     }
 
     @Test
+    void testNormalizeKyuubiStateThriftAndBare() {
+        assertThat(ExecutionService.normalizeKyuubiState("INITIALIZED_STATE")).isEqualTo("INITIALIZED");
+        assertThat(ExecutionService.normalizeKyuubiState("PENDING_STATE")).isEqualTo("PENDING");
+        assertThat(ExecutionService.normalizeKyuubiState("RUNNING_STATE")).isEqualTo("RUNNING");
+        assertThat(ExecutionService.normalizeKyuubiState("COMPILED_STATE")).isEqualTo("RUNNING");
+        assertThat(ExecutionService.normalizeKyuubiState("FINISHED_STATE")).isEqualTo("FINISHED");
+        assertThat(ExecutionService.normalizeKyuubiState("CANCELED_STATE")).isEqualTo("CANCELED");
+        assertThat(ExecutionService.normalizeKyuubiState("CLOSED_STATE")).isEqualTo("CLOSED");
+        assertThat(ExecutionService.normalizeKyuubiState("ERROR_STATE")).isEqualTo("ERROR");
+        assertThat(ExecutionService.normalizeKyuubiState("UNKNOWN_STATE")).isEqualTo("UNKNOWN");
+        assertThat(ExecutionService.normalizeKyuubiState("UKNOWN_STATE")).isEqualTo("UNKNOWN");
+        assertThat(ExecutionService.normalizeKyuubiState("TIMEDOUT_STATE")).isEqualTo("TIMEOUT");
+
+        assertThat(ExecutionService.normalizeKyuubiState("INITIALIZED")).isEqualTo("INITIALIZED");
+        assertThat(ExecutionService.normalizeKyuubiState("PENDING")).isEqualTo("PENDING");
+        assertThat(ExecutionService.normalizeKyuubiState("RUNNING")).isEqualTo("RUNNING");
+        assertThat(ExecutionService.normalizeKyuubiState("COMPILED")).isEqualTo("RUNNING");
+        assertThat(ExecutionService.normalizeKyuubiState("FINISHED")).isEqualTo("FINISHED");
+        assertThat(ExecutionService.normalizeKyuubiState("CANCELED")).isEqualTo("CANCELED");
+        assertThat(ExecutionService.normalizeKyuubiState("CLOSED")).isEqualTo("CLOSED");
+        assertThat(ExecutionService.normalizeKyuubiState("ERROR")).isEqualTo("ERROR");
+        assertThat(ExecutionService.normalizeKyuubiState("UNKNOWN")).isEqualTo("UNKNOWN");
+        assertThat(ExecutionService.normalizeKyuubiState("UKNOWN")).isEqualTo("UNKNOWN");
+        assertThat(ExecutionService.normalizeKyuubiState("TIMEOUT")).isEqualTo("TIMEOUT");
+        assertThat(ExecutionService.normalizeKyuubiState("TIMEDOUT")).isEqualTo("TIMEOUT");
+
+        assertThat(ExecutionService.normalizeKyuubiState("  finished_state  ")).isEqualTo("FINISHED");
+        assertThat(ExecutionService.normalizeKyuubiState("running_state")).isEqualTo("RUNNING");
+        assertThat(ExecutionService.normalizeKyuubiState(null)).isEqualTo("UNKNOWN");
+        assertThat(ExecutionService.normalizeKyuubiState("")).isEqualTo("UNKNOWN");
+        assertThat(ExecutionService.normalizeKyuubiState("   ")).isEqualTo("UNKNOWN");
+    }
+
+    @Test
     void testSyncAutoOutputForPythonStream() throws Exception {
         String cellRunId = "crun-py-1";
         NotebookRun run = NotebookRun.builder()
@@ -222,7 +256,7 @@ class ExecutionServiceAutoOutputTest {
         when(runRepository.findById("run-2")).thenReturn(Optional.of(run));
         when(runRepository.findByIdForUpdate("run-2")).thenReturn(Optional.of(run));
 
-        JsonNode eventNode = objectMapper.readTree("{\"state\": \"FINISHED\"}");
+        JsonNode eventNode = objectMapper.readTree("{\"state\": \"FINISHED_STATE\"}");
         when(kyuubiRestClient.getOperationEvent(eq("op-py-1"), any(), any())).thenReturn(eventNode);
 
         JsonNode rowsetNode = objectMapper.readTree("""
@@ -269,7 +303,7 @@ class ExecutionServiceAutoOutputTest {
 
         String rawException = "Traceback (most recent call last):\n  File \"<stdin>\", line 1, in <module>\nZeroDivisionError: division by zero";
         com.fasterxml.jackson.databind.node.ObjectNode eventNode = objectMapper.createObjectNode();
-        eventNode.put("state", "ERROR");
+        eventNode.put("state", "ERROR_STATE");
         eventNode.putObject("exception").put("message", rawException);
         when(kyuubiRestClient.getOperationEvent(eq("op-err-1"), any(), any())).thenReturn(eventNode);
         when(kyuubiRestClient.getOperationLog(eq("op-err-1"), any(), anyInt(), any())).thenReturn(Collections.emptyList());
@@ -289,14 +323,54 @@ class ExecutionServiceAutoOutputTest {
     @Test
     void testSyncKyuubiStateMappings() throws Exception {
         testKyuubiStateMapping("TIMEOUT", "FAILED", "TIMEOUT");
+        testKyuubiStateMapping("TIMEDOUT_STATE", "FAILED", "TIMEOUT");
 
         testKyuubiStateMapping("CANCELED", "CANCELED", null);
+        testKyuubiStateMapping("CANCELED_STATE", "CANCELED", null);
 
         testKyuubiStateMapping("CLOSED", "LOST", "KYUUBI_CLOSED");
+        testKyuubiStateMapping("CLOSED_STATE", "LOST", "KYUUBI_CLOSED");
 
-        testKyuubiStateMapping("UNKNOWN", "LOST", "KYUUBI_UNKNOWN");
+        testKyuubiStateMapping("CUSTOM_STATE", "LOST", "KYUUBI_CUSTOM");
 
-        testKyuubiStateMapping("CUSTOM_STATE", "LOST", "KYUUBI_CUSTOM_STATE");
+        testUnknownStateThreshold("UKNOWN_STATE");
+    }
+
+    private void testUnknownStateThreshold(String kyuubiState) throws Exception {
+        String cellRunId = "crun-unknown-thr";
+        NotebookRun run = NotebookRun.builder()
+                .id("run-thr")
+                .notebookId("nb-1")
+                .triggeredBy("alice")
+                .status("RUNNING")
+                .build();
+
+        NotebookCellRun cellRun = NotebookCellRun.builder()
+                .id(cellRunId)
+                .notebookRunId("run-thr")
+                .executionId("op-thr")
+                .language("SQL")
+                .status("RUNNING")
+                .build();
+
+        when(cellRunRepository.findById(cellRunId)).thenReturn(Optional.of(cellRun));
+        when(cellRunRepository.findByIdForUpdate(cellRunId)).thenReturn(Optional.of(cellRun));
+        when(runRepository.findById("run-thr")).thenReturn(Optional.of(run));
+        when(runRepository.findByIdForUpdate("run-thr")).thenReturn(Optional.of(run));
+
+        JsonNode eventNode = objectMapper.readTree("{\"state\": \"" + kyuubiState + "\"}");
+        when(kyuubiRestClient.getOperationEvent(eq("op-thr"), any(), any())).thenReturn(eventNode);
+        when(kyuubiRestClient.getOperationLog(eq("op-thr"), any(), anyInt(), any())).thenReturn(Collections.emptyList());
+
+        NotebookExecutionDto res1 = executionService.syncAndGetExecution(cellRunId, "alice", "Bearer dummy");
+        assertThat(res1.getStatus()).isEqualTo("RUNNING");
+
+        NotebookExecutionDto res2 = executionService.syncAndGetExecution(cellRunId, "alice", "Bearer dummy");
+        assertThat(res2.getStatus()).isEqualTo("RUNNING");
+
+        NotebookExecutionDto res3 = executionService.syncAndGetExecution(cellRunId, "alice", "Bearer dummy");
+        assertThat(res3.getStatus()).isEqualTo("LOST");
+        assertThat(res3.getErrorCode()).isEqualTo("KYUUBI_UNKNOWN");
     }
 
     private void testKyuubiStateMapping(String kyuubiState, String expectedStatus, String expectedErrorCode) throws Exception {
@@ -323,6 +397,7 @@ class ExecutionServiceAutoOutputTest {
 
         JsonNode eventNode = objectMapper.readTree("{\"state\": \"" + kyuubiState + "\"}");
         when(kyuubiRestClient.getOperationEvent(eq("op-" + kyuubiState), any(), any())).thenReturn(eventNode);
+        when(kyuubiRestClient.getOperationLog(eq("op-" + kyuubiState), any(), anyInt(), any())).thenReturn(Collections.emptyList());
 
         NotebookExecutionDto result = executionService.syncAndGetExecution(cellRunId, "alice", "Bearer dummy");
 

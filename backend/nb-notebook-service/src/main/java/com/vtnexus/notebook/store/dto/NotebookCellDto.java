@@ -3,6 +3,7 @@ package com.vtnexus.notebook.store.dto;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import lombok.*;
 
+import java.util.List;
 import java.util.Map;
 
 @Getter
@@ -18,5 +19,7 @@ public class NotebookCellDto {
     private String source;
     private Integer position;
     private Map<String, Object> metadata;
+    private List<Object> outputs;
+    private Integer executionCount;
     private String message;
 }

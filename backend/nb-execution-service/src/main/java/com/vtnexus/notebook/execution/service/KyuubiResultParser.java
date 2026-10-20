@@ -21,6 +21,28 @@ public class KyuubiResultParser {
 
     public record ErrorInfo(String ename, String evalue, List<String> traceback) {}
 
+    public static String normalizeKyuubiState(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return "UNKNOWN";
+        }
+        String s = raw.trim().toUpperCase(java.util.Locale.ROOT);
+        if (s.endsWith("_STATE")) {
+            s = s.substring(0, s.length() - "_STATE".length());
+        }
+        return switch (s) {
+            case "INITIALIZED" -> "INITIALIZED";
+            case "PENDING" -> "PENDING";
+            case "RUNNING", "COMPILED" -> "RUNNING";
+            case "FINISHED" -> "FINISHED";
+            case "CANCELED" -> "CANCELED";
+            case "ERROR" -> "ERROR";
+            case "TIMEDOUT", "TIMEOUT" -> "TIMEOUT";
+            case "CLOSED" -> "CLOSED";
+            case "UKNOWN", "UNKNOWN" -> "UNKNOWN";
+            default -> s;
+        };
+    }
+
     public List<Column> columns(JsonNode metadata) {
         if (metadata == null || !metadata.has("columns") || !metadata.get("columns").isArray()) {
             return Collections.emptyList();

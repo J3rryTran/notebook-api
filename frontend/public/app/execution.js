@@ -277,16 +277,20 @@ async function handleExecutionCompleted(executionId, cellId, status, durationMs,
       statusEl.innerHTML = `<span class="status-badge succeeded"><i class="fa-solid fa-check"></i> Xong (${formatDuration(durationMs)})</span>`;
     }
 
-    // Lấy results
+    const pageSize = (window.notebookConfig && window.notebookConfig.pageSize) || 200;
     let resultsRendered = false;
+    let savedOutput = null;
+
+    // Lấy results (bảng SQL)
     try {
-      const resRes = await api(`/api/v1/executions/${executionId}/results`);
+      const resRes = await api(`/api/v1/executions/${executionId}/results?offset=0&limit=${pageSize}`);
       if (resRes.ok) {
         const text = await resRes.text();
         if (text && text.trim() !== '' && text.trim() !== '[]') {
           const parsed = JSON.parse(text);
-          outputEl.innerHTML = renderParsedOutput(parsed, executionId);
+          outputEl.innerHTML = renderParsedOutput(parsed, cellId, executionId, { durationMs });
           resultsRendered = true;
+          savedOutput = parsed;
         }
       }
     } catch (e) {
@@ -301,15 +305,24 @@ async function handleExecutionCompleted(executionId, cellId, status, durationMs,
           const outText = await outRes.text();
           if (outText && outText.trim() !== '' && outText.trim() !== '[]') {
             const parsedOut = JSON.parse(outText);
-            outputEl.innerHTML = renderParsedOutput(parsedOut, executionId);
+            outputEl.innerHTML = renderParsedOutput(parsedOut, cellId, executionId, { durationMs });
             resultsRendered = true;
+            savedOutput = parsedOut;
           }
         }
       } catch (e) {}
     }
 
     if (!resultsRendered) {
-      outputEl.innerHTML = renderStreamOutput('Truy vấn thực thi thành công (không có kết quả trả về).', { durationMs });
+      const defaultOut = { output_type: 'stream', name: 'stdout', text: 'Truy vấn thực thi thành công (không có kết quả trả về).' };
+      outputEl.innerHTML = renderStreamOutput(defaultOut.text, { durationMs });
+      savedOutput = defaultOut;
+    }
+
+    if (savedOutput) {
+      const outputsArray = Array.isArray(savedOutput) ? savedOutput : [savedOutput];
+      const count = (execDto && execDto.executionCount !== undefined) ? execDto.executionCount : 1;
+      saveCellOutputs(cellId, outputsArray, count);
     }
 
   } else if (status === 'FAILED') {
@@ -328,12 +341,16 @@ async function handleExecutionCompleted(executionId, cellId, status, durationMs,
 
     if (!errorData) {
       errorData = {
+        output_type: 'error',
         ename: 'ExecutionFailed',
         evalue: execDto && execDto.errorMessage ? execDto.errorMessage : 'Thực thi thất bại trên Kyuubi.'
       };
     }
 
     outputEl.innerHTML = renderErrorOutput(errorData, executionId);
+    const errArray = Array.isArray(errorData) ? errorData : [errorData];
+    const count = (execDto && execDto.executionCount !== undefined) ? execDto.executionCount : null;
+    saveCellOutputs(cellId, errArray, count);
 
   } else if (status === 'CANCELED') {
     if (statusEl) {

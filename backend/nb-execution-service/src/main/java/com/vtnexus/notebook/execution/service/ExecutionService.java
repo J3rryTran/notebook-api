@@ -23,6 +23,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
 
@@ -72,6 +73,16 @@ public class ExecutionService {
         this.resultParser = new KyuubiResultParser();
         this.maxRows = notebookProperties.getResults().getMaxRows();
     }
+
+    public static String normalizeKyuubiState(String raw) {
+        return KyuubiResultParser.normalizeKyuubiState(raw);
+    }
+
+    private static final int MAX_UNKNOWN_ATTEMPTS = 3;
+    private final com.github.benmanes.caffeine.cache.Cache<String, java.util.concurrent.atomic.AtomicInteger> unknownStateCounts =
+            com.github.benmanes.caffeine.cache.Caffeine.newBuilder()
+                    .expireAfterWrite(Duration.ofMinutes(10))
+                    .build();
 
     public record SessionCreationResult(NotebookKyuubiSession session, List<String> warnings) {}
 
@@ -361,14 +372,28 @@ public class ExecutionService {
             return toDto(cellRunRepository.findById(cellRunId).orElse(cellRun), run.getNotebookId(), run.getKyuubiSessionRef(), "OPERATION_NOT_FOUND", false);
         }
 
-        String rawState = event != null && event.has("state") ? event.get("state").asText().toUpperCase() : "UNKNOWN";
+        String rawState = event != null && event.has("state") ? event.get("state").asText() : "UNKNOWN";
+        String normalizedState = normalizeKyuubiState(rawState);
 
-        if ("INITIALIZED".equals(rawState) || "PENDING".equals(rawState) || "RUNNING".equals(rawState)) {
+        if ("INITIALIZED".equals(normalizedState) || "PENDING".equals(normalizedState) || "RUNNING".equals(normalizedState)) {
+            unknownStateCounts.invalidate(cellRunId);
             syncLogsAndHeartbeat(cellRunId, run.getId(), cellRun.getExecutionId(), instance, effectiveAuth);
             return toDto(cellRunRepository.findById(cellRunId).orElse(cellRun), run.getNotebookId(), run.getKyuubiSessionRef(), run.getErrorCode(), false);
         }
 
-        handleOperationTerminalOrLost(cellRunId, run.getId(), rawState, event, instance, effectiveAuth);
+        if ("UNKNOWN".equals(normalizedState)) {
+            int attempts = unknownStateCounts.get(cellRunId, k -> new java.util.concurrent.atomic.AtomicInteger(0)).incrementAndGet();
+            if (attempts < MAX_UNKNOWN_ATTEMPTS) {
+                log.warn("Kyuubi operation state is UNKNOWN (attempt {}/{}) for cellRunId={}", attempts, MAX_UNKNOWN_ATTEMPTS, cellRunId);
+                syncLogsAndHeartbeat(cellRunId, run.getId(), cellRun.getExecutionId(), instance, effectiveAuth);
+                return toDto(cellRunRepository.findById(cellRunId).orElse(cellRun), run.getNotebookId(), run.getKyuubiSessionRef(), run.getErrorCode(), false);
+            }
+            unknownStateCounts.invalidate(cellRunId);
+        } else {
+            unknownStateCounts.invalidate(cellRunId);
+        }
+
+        handleOperationTerminalOrLost(cellRunId, run.getId(), normalizedState, rawState, event, instance, effectiveAuth);
 
         NotebookCellRun updatedCell = cellRunRepository.findById(cellRunId).orElse(cellRun);
         NotebookRun updatedRun = runRepository.findById(run.getId()).orElse(run);
@@ -411,7 +436,7 @@ public class ExecutionService {
     }
 
     private void handleOperationTerminalOrLost(
-            String cellRunId, String runId, String state, JsonNode event, String instance, String authHeader) {
+            String cellRunId, String runId, String state, String rawState, JsonNode event, String instance, String authHeader) {
 
         NotebookCellRun cellRun = cellRunRepository.findById(cellRunId).orElse(null);
         if (cellRun == null || !"RUNNING".equals(cellRun.getStatus())) {
@@ -562,8 +587,9 @@ public class ExecutionService {
                 kyuubiRestClient.closeOperation(opId, instance, authHeader);
             } catch (Exception ignored) {}
 
-        } else {
-            final String errorCode = "KYUUBI_" + state;
+        } else if ("CLOSED".equals(state)) {
+            final String errorCode = "KYUUBI_CLOSED";
+            final String errorMsg = "Operation has been closed on engine";
             transactionTemplate.executeWithoutResult(txStatus -> {
                 NotebookCellRun cr = cellRunRepository.findByIdForUpdate(cellRunId).orElse(null);
                 NotebookRun r = runRepository.findByIdForUpdate(runId).orElse(null);
@@ -574,12 +600,41 @@ public class ExecutionService {
                     if (cr.getStartedAt() != null) {
                         cr.setExecutionTimeMs(now.toEpochMilli() - cr.getStartedAt().toEpochMilli());
                     }
-                    cr.setErrorMessage("Kyuubi engine operation state: " + state);
+                    cr.setErrorMessage(errorMsg);
 
                     r.setStatus("LOST");
                     r.setFinishedAt(now);
                     r.setErrorCode(errorCode);
-                    r.setErrorMessage("Kyuubi engine operation state: " + state);
+                    r.setErrorMessage(errorMsg);
+
+                    cellRunRepository.save(cr);
+                    runRepository.save(r);
+                }
+            });
+            try {
+                kyuubiRestClient.closeOperation(opId, instance, authHeader);
+            } catch (Exception ignored) {}
+
+        } else {
+            log.warn("Unrecognized Kyuubi operation state: '{}' (raw: '{}') for cellRunId={}", state, rawState, cellRunId);
+            final String errorCode = "KYUUBI_" + state;
+            final String errorMsg = "Kyuubi engine operation state: " + rawState;
+            transactionTemplate.executeWithoutResult(txStatus -> {
+                NotebookCellRun cr = cellRunRepository.findByIdForUpdate(cellRunId).orElse(null);
+                NotebookRun r = runRepository.findByIdForUpdate(runId).orElse(null);
+                if (cr != null && "RUNNING".equals(cr.getStatus()) && r != null) {
+                    Instant now = Instant.now();
+                    cr.setStatus("LOST");
+                    cr.setFinishedAt(now);
+                    if (cr.getStartedAt() != null) {
+                        cr.setExecutionTimeMs(now.toEpochMilli() - cr.getStartedAt().toEpochMilli());
+                    }
+                    cr.setErrorMessage(errorMsg);
+
+                    r.setStatus("LOST");
+                    r.setFinishedAt(now);
+                    r.setErrorCode(errorCode);
+                    r.setErrorMessage(errorMsg);
 
                     cellRunRepository.save(cr);
                     runRepository.save(r);

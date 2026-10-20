@@ -7,7 +7,10 @@ import com.github.tomakehurst.wiremock.core.WireMockConfiguration;
 import com.vtnexus.notebook.common.exception.NotebookApiException;
 import com.vtnexus.notebook.execution.client.DocumentServiceClient;
 import com.vtnexus.notebook.execution.client.KyuubiRestClient;
+import com.vtnexus.notebook.execution.dto.NotebookExecutionDto;
+import com.vtnexus.notebook.execution.model.NotebookCellRun;
 import com.vtnexus.notebook.execution.model.NotebookKyuubiSession;
+import com.vtnexus.notebook.execution.model.NotebookRun;
 import com.vtnexus.notebook.execution.repository.NotebookCellRunRepository;
 import com.vtnexus.notebook.execution.repository.NotebookExecutionLogRepository;
 import com.vtnexus.notebook.execution.repository.NotebookKyuubiSessionRepository;
@@ -309,5 +312,79 @@ class ProxyUserWireMockTest {
                     assertThat(nae.getCode()).isEqualTo("PROXY_UNAVAILABLE");
                     assertThat(nae.getStatus().value()).isEqualTo(503);
                 });
+    }
+
+    @Test
+    void testExecutionLifecycleRunningStateThenFinishedState() throws Exception {
+        String cellRunId = "crun-wm-1";
+        String opId = "op-wm-1";
+
+        NotebookRun run = NotebookRun.builder()
+                .id("run-wm-1")
+                .notebookId("nb-1")
+                .triggeredBy("alice")
+                .kyuubiSessionRef("inst-1|sess-1")
+                .status("RUNNING")
+                .build();
+
+        NotebookCellRun cellRun = NotebookCellRun.builder()
+                .id(cellRunId)
+                .notebookRunId("run-wm-1")
+                .executionId(opId)
+                .language("SQL")
+                .status("RUNNING")
+                .build();
+
+        when(cellRunRepository.findById(cellRunId)).thenReturn(Optional.of(cellRun));
+        when(cellRunRepository.findByIdForUpdate(cellRunId)).thenReturn(Optional.of(cellRun));
+        when(runRepository.findById("run-wm-1")).thenReturn(Optional.of(run));
+        when(runRepository.findByIdForUpdate("run-wm-1")).thenReturn(Optional.of(run));
+
+        wireMockServer.stubFor(get(urlEqualTo("/api/v1/operations/" + opId + "/event"))
+                .inScenario("Lifecycle")
+                .whenScenarioStateIs(com.github.tomakehurst.wiremock.stubbing.Scenario.STARTED)
+                .willReturn(aResponse()
+                        .withHeader("Content-Type", "application/json")
+                        .withBody("{\"state\":\"RUNNING_STATE\"}"))
+                .willSetStateTo("QueryFinished"));
+
+        wireMockServer.stubFor(get(urlMatching("/api/v1/operations/" + opId + "/log.*"))
+                .willReturn(aResponse()
+                        .withHeader("Content-Type", "application/json")
+                        .withBody("{\"logRowSet\":[\"Starting query...\"],\"rowCount\":1}")));
+
+        NotebookExecutionDto poll1 = executionService.syncAndGetExecution(cellRunId, "alice", "Bearer alice-token");
+        assertThat(poll1.getStatus()).isEqualTo("RUNNING");
+
+        wireMockServer.stubFor(get(urlEqualTo("/api/v1/operations/" + opId + "/event"))
+                .inScenario("Lifecycle")
+                .whenScenarioStateIs("QueryFinished")
+                .willReturn(aResponse()
+                        .withHeader("Content-Type", "application/json")
+                        .withBody("{\"state\":\"FINISHED_STATE\"}")));
+
+        wireMockServer.stubFor(get(urlEqualTo("/api/v1/operations/" + opId + "/resultsetmetadata"))
+                .willReturn(aResponse()
+                        .withHeader("Content-Type", "application/json")
+                        .withBody("{\"columns\":[{\"columnName\":\"val\",\"dataType\":\"STRING_TYPE\"}]}")));
+
+        wireMockServer.stubFor(get(urlPathEqualTo("/api/v1/operations/" + opId + "/rowset"))
+                .willReturn(aResponse()
+                        .withHeader("Content-Type", "application/json")
+                        .withBody("{\"rows\":[{\"fields\":[{\"dataType\":\"STRING_TYPE\",\"value\":\"result1\"}]}],\"rowCount\":1}")));
+
+        wireMockServer.stubFor(put(urlEqualTo("/api/v1/operations/" + opId))
+                .willReturn(aResponse()
+                        .withHeader("Content-Type", "application/json")
+                        .withBody("{\"success\":true}")));
+
+        NotebookExecutionDto poll2 = executionService.syncAndGetExecution(cellRunId, "alice", "Bearer alice-token");
+        assertThat(poll2.getStatus()).isEqualTo("SUCCEEDED");
+        assertThat(cellRun.getStatus()).isEqualTo("SUCCEEDED");
+
+        wireMockServer.verify(getRequestedFor(urlEqualTo("/api/v1/operations/" + opId + "/resultsetmetadata")));
+        wireMockServer.verify(getRequestedFor(urlPathEqualTo("/api/v1/operations/" + opId + "/rowset")));
+        wireMockServer.verify(putRequestedFor(urlEqualTo("/api/v1/operations/" + opId))
+                .withRequestBody(containing("\"action\":\"close\"")));
     }
 }

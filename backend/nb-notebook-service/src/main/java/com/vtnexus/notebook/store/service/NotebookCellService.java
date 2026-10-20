@@ -99,6 +99,13 @@ public class NotebookCellService {
     }
 
     public NotebookCellDto updateCell(String notebookId, String cellId, String cellType, String language, String source, String user) {
+        return updateCell(notebookId, cellId, cellType, language, source, null, false, null, false, user);
+    }
+
+    public NotebookCellDto updateCell(String notebookId, String cellId, String cellType, String language, String source,
+                                      List<Object> outputs, boolean hasOutputs,
+                                      Integer executionCount, boolean hasExecutionCount,
+                                      String user) {
         Notebook notebook = notebookService.getNotebook(notebookId, user);
         notebookService.checkAccess(notebook, user, "EDITOR");
 
@@ -123,6 +130,8 @@ public class NotebookCellService {
         if (cellType != null) item.setType(cellType.toUpperCase());
         if (language != null) item.setLanguage(language.toUpperCase());
         if (source != null) item.setSource(source);
+        if (hasOutputs) item.setOutputs(outputs);
+        if (hasExecutionCount) item.setExecutionCount(executionCount);
 
         saveNotebookDocument(notebook, doc);
         notebookService.snapshotRevision(notebookId, "Update cell " + cellId, user, "AUTO");
@@ -197,6 +206,8 @@ public class NotebookCellService {
                 .source(item.getSource())
                 .position(position)
                 .metadata(item.getMetadata())
+                .outputs(item.getOutputs())
+                .executionCount(item.getExecutionCount())
                 .build();
     }
 }

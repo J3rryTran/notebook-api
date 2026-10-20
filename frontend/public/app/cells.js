@@ -74,34 +74,67 @@ function renderCellHtml(cell, index) {
 
 function renderCellInitialOutput(cell) {
   if (!cell.outputs) return '';
-  if (typeof cell.outputs === 'string' && cell.outputs.trim() !== '') {
+  let outData = cell.outputs;
+  if (typeof outData === 'string' && outData.trim() !== '') {
     try {
-      const parsed = JSON.parse(cell.outputs);
-      return renderParsedOutput(parsed, cell.id);
+      outData = JSON.parse(outData);
     } catch (e) {
-      return renderStreamOutput(cell.outputs);
+      return renderStreamOutput(outData);
     }
-  } else if (typeof cell.outputs === 'object') {
-    return renderParsedOutput(cell.outputs, cell.id);
+  }
+  if (Array.isArray(outData)) {
+    if (outData.length === 0) return '';
+    return outData.map(item => renderParsedOutput(item, cell.id, null)).join('');
+  }
+  if (typeof outData === 'object' && outData !== null) {
+    return renderParsedOutput(outData, cell.id, null);
   }
   return '';
 }
 
-function renderParsedOutput(data, cellId) {
+function renderParsedOutput(data, cellId, executionId = null, stats = {}) {
+  if (!data) return '';
+  if (Array.isArray(data)) {
+    return data.map(item => renderParsedOutput(item, cellId, executionId, stats)).join('');
+  }
   if (data.ename || data.output_type === 'error') {
-    return renderErrorOutput(data, cellId);
+    return renderErrorOutput(data, executionId || cellId);
   }
   if (data.data && data.data['application/vnd.notebook.table+json']) {
-    return renderTableOutput(data.data['application/vnd.notebook.table+json']);
+    return renderTableOutput(data.data['application/vnd.notebook.table+json'], stats, cellId, executionId);
   }
   if (data.rows || data.columns) {
-    return renderTableOutput(data);
+    return renderTableOutput(data, stats, cellId, executionId);
   }
   if (data.text || data.output_type === 'stream') {
-    return renderStreamOutput(data.text || (Array.isArray(data.traceback) ? data.traceback.join('\n') : ''));
+    return renderStreamOutput(data.text || (Array.isArray(data.traceback) ? data.traceback.join('\n') : ''), stats);
   }
-  return renderStreamOutput(JSON.stringify(data, null, 2));
+  return renderStreamOutput(JSON.stringify(data, null, 2), stats);
 }
+
+async function saveCellOutputs(cellId, outputs, executionCount) {
+  if (!currentNotebook) return;
+  try {
+    await api(`/api/v1/notebooks/${currentNotebook.id}/cells/${cellId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        outputs: outputs,
+        executionCount: executionCount
+      })
+    });
+    if (currentNotebook.cells) {
+      const c = currentNotebook.cells.find(cell => cell.id === cellId);
+      if (c) {
+        c.outputs = outputs;
+        c.executionCount = executionCount;
+      }
+    }
+  } catch (err) {
+    console.warn('Lỗi lưu output cell vào document:', err);
+  }
+}
+window.saveCellOutputs = saveCellOutputs;
 
 function setActiveCell(cellId) {
   document.querySelectorAll('.cell-card').forEach(c => c.classList.remove('active'));

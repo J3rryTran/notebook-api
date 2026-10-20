@@ -56,8 +56,16 @@ public class NotebookCellController {
         String cellType = (String) body.get("cellType");
         String language = (String) body.get("language");
         String source = (String) body.get("source");
+        boolean hasOutputs = body.containsKey("outputs");
+        @SuppressWarnings("unchecked")
+        List<Object> outputs = hasOutputs ? (List<Object>) body.get("outputs") : null;
+        boolean hasExecutionCount = body.containsKey("executionCount");
+        Integer executionCount = hasExecutionCount && body.get("executionCount") != null
+                ? ((Number) body.get("executionCount")).intValue()
+                : null;
 
-        NotebookCellDto cell = cellService.updateCell(notebookId, cellId, cellType, language, source, principal.toString());
+        NotebookCellDto cell = cellService.updateCell(notebookId, cellId, cellType, language, source,
+                outputs, hasOutputs, executionCount, hasExecutionCount, principal.toString());
         cell.setMessage("Cell updated successfully");
         return ResponseEntity.ok(cell);
     }
