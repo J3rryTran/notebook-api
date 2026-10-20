@@ -80,7 +80,9 @@ public class NotebookExecutionController {
             HttpServletRequest request) {
         String cellId = body.get("cellId");
         String auth = kyuubiCredential();
-        return ResponseEntity.ok(executionService.submitExecution(sessionId, cellId, principal.toString(), auth));
+        NotebookExecutionDto dto = executionService.submitExecution(sessionId, cellId, principal.toString(), auth);
+        dto.setMessage("Execution submitted successfully");
+        return ResponseEntity.ok(dto);
     }
 
     @GetMapping("/executions/{executionId}")
@@ -89,7 +91,9 @@ public class NotebookExecutionController {
             @AuthenticationPrincipal Object principal,
             HttpServletRequest request) {
         String auth = kyuubiCredential();
-        return ResponseEntity.ok(executionService.syncAndGetExecution(executionId, principal.toString(), auth));
+        NotebookExecutionDto dto = executionService.syncAndGetExecution(executionId, principal.toString(), auth);
+        dto.setMessage("Execution status retrieved successfully");
+        return ResponseEntity.ok(dto);
     }
 
     private final com.vtnexus.notebook.execution.client.KyuubiRestClient kyuubiRestClient;
@@ -142,7 +146,8 @@ public class NotebookExecutionController {
                     if (lastStatus != null && !lastStatus.equals(currentStatus)) {
                         deferred.setResult(ResponseEntity.ok(Map.of(
                                 "executionId", exec.getId(),
-                                "status", currentStatus
+                                "status", currentStatus,
+                                "message", "Execution status: " + currentStatus
                         )));
                         return;
                     }
@@ -151,7 +156,8 @@ public class NotebookExecutionController {
                     if (!"PENDING".equals(currentStatus) && !"RUNNING".equals(currentStatus)) {
                         deferred.setResult(ResponseEntity.ok(Map.of(
                                 "executionId", exec.getId(),
-                                "status", currentStatus
+                                "status", currentStatus,
+                                "message", "Execution status: " + currentStatus
                         )));
                         return;
                     }
@@ -181,23 +187,29 @@ public class NotebookExecutionController {
     }
 
     @PostMapping("/executions/{executionId}:cancel")
-    public ResponseEntity<Void> cancelExecution(
+    public ResponseEntity<Map<String, Object>> cancelExecution(
             @PathVariable("executionId") String executionId,
             @AuthenticationPrincipal Object principal,
             HttpServletRequest request) {
         String auth = kyuubiCredential();
         executionService.cancelExecution(executionId, principal.toString(), auth);
-        return ResponseEntity.noContent().build();
+        return ResponseEntity.ok(Map.of(
+                "message", "Execution cancelled successfully",
+                "executionId", executionId
+        ));
     }
 
     @PostMapping("/notebook-runtimes/{runtimeId}:restart")
-    public ResponseEntity<Void> restartRuntime(
+    public ResponseEntity<Map<String, Object>> restartRuntime(
             @PathVariable("runtimeId") String runtimeId,
             @AuthenticationPrincipal Object principal,
             HttpServletRequest request) {
         String auth = kyuubiCredential();
         executionService.restartRuntime(runtimeId, principal.toString(), auth);
-        return ResponseEntity.noContent().build();
+        return ResponseEntity.ok(Map.of(
+                "message", "Runtime restarted successfully",
+                "runtimeId", runtimeId
+        ));
     }
 
     @GetMapping("/executions/{executionId}/outputs")
@@ -221,7 +233,8 @@ public class NotebookExecutionController {
         String logs = executionService.getExecutionLogs(executionId, afterSequence);
         return ResponseEntity.ok(Map.of(
                 "executionId", executionId,
-                "logs", logs
+                "logs", logs,
+                "message", "Execution logs retrieved successfully"
         ));
     }
 
@@ -266,13 +279,16 @@ public class NotebookExecutionController {
     }
 
     @DeleteMapping("/notebook-sessions/{sessionId}")
-    public ResponseEntity<Void> closeSession(
+    public ResponseEntity<Map<String, Object>> closeSession(
             @PathVariable("sessionId") String sessionId,
             @AuthenticationPrincipal Object principal,
             HttpServletRequest request) {
         String auth = kyuubiCredential();
         executionService.closeSession(sessionId, principal.toString(), auth);
-        return ResponseEntity.noContent().build();
+        return ResponseEntity.ok(Map.of(
+                "message", "Session closed successfully",
+                "sessionId", sessionId
+        ));
     }
 
     @GetMapping("/notebook-sessions/{sessionId}/runtimes")
@@ -287,18 +303,22 @@ public class NotebookExecutionController {
         return ResponseEntity.ok(Map.of(
                 "sessionId", session.getId(),
                 "status", session.getStatus(),
-                "instance", session.getKyuubiInstance() != null ? session.getKyuubiInstance() : ""
+                "instance", session.getKyuubiInstance() != null ? session.getKyuubiInstance() : "",
+                "message", "Session runtime status retrieved successfully"
         ));
     }
 
     @PostMapping("/notebook-runtimes/{runtimeId}:interrupt")
-    public ResponseEntity<Void> interruptRuntime(
+    public ResponseEntity<Map<String, Object>> interruptRuntime(
             @PathVariable("runtimeId") String runtimeId,
             @AuthenticationPrincipal Object principal,
             HttpServletRequest request) {
         String auth = kyuubiCredential();
         executionService.interruptSession(runtimeId, principal.toString(), auth);
-        return ResponseEntity.noContent().build();
+        return ResponseEntity.ok(Map.of(
+                "message", "Runtime interrupted successfully",
+                "runtimeId", runtimeId
+        ));
     }
 
     @GetMapping("/executions")
@@ -350,6 +370,7 @@ public class NotebookExecutionController {
         resp.put("active", activeCount);
         resp.put("queued", queuedCount);
         resp.put("activeSessions", userSessions);
+        resp.put("message", (kyuubiOk && persistenceOk) ? "All services healthy" : "Service health degraded");
 
         return ResponseEntity.ok(resp);
     }

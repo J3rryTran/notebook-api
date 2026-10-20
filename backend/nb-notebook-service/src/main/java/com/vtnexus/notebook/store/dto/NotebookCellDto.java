@@ -18,4 +18,5 @@ public class NotebookCellDto {
     private String source;
     private Integer position;
     private Map<String, Object> metadata;
+    private String message;
 }

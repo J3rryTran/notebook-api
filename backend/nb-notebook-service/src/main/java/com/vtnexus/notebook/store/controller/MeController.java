@@ -41,6 +41,7 @@ public class MeController {
         perms.put("manageRuntimes", true);
         perms.put("managePythonEnvironments", false);
         resp.put("permissions", perms);
+        resp.put("message", "Current user retrieved successfully");
 
         return ResponseEntity.ok(resp);
     }

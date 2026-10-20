@@ -129,11 +129,14 @@ public class AuthController {
 
         addSessionCookie(httpRequest, response, session.getId(), authProperties.getSessionTtl());
 
-        return ResponseEntity.ok(Map.of("user", authUser));
+        return ResponseEntity.ok(Map.of(
+                "user", authUser,
+                "message", "Login successful"
+        ));
     }
 
     @PostMapping("/logout")
-    public ResponseEntity<Void> logout(
+    public ResponseEntity<Map<String, Object>> logout(
             HttpServletRequest request,
             HttpServletResponse response) {
 
@@ -152,6 +155,6 @@ public class AuthController {
                 }
             }
         }
-        return ResponseEntity.ok().build();
+        return ResponseEntity.ok(Map.of("message", "Logout successful"));
     }
 }

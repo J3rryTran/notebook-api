@@ -54,6 +54,7 @@ public class InternalAccessController {
         resp.put("user", user);
         resp.put("role", role);
         resp.put("canExecute", notebookService.getRoleLevel(role) >= notebookService.getRoleLevel("RUNNER"));
+        resp.put("message", "Access checked successfully");
         return ResponseEntity.ok(resp);
     }
 
@@ -73,6 +74,7 @@ public class InternalAccessController {
         resp.put("cellType", cell.getCellType());
         resp.put("language", cell.getLanguage());
         resp.put("source", cell.getSource());
+        resp.put("message", "Cell retrieved successfully");
         return ResponseEntity.ok(resp);
     }
 
@@ -90,6 +92,7 @@ public class InternalAccessController {
         Map<String, String> resp = new HashMap<>();
         resp.put("username", username);
         resp.put("rangerUsername", rangerUsername);
+        resp.put("message", "Ranger username retrieved successfully");
         return ResponseEntity.ok(resp);
     }
 }

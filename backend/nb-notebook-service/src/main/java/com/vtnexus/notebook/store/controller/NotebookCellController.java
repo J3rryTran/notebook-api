@@ -34,14 +34,18 @@ public class NotebookCellController {
         String source = (String) body.get("source");
         Integer position = body.get("position") != null ? ((Number) body.get("position")).intValue() : null;
 
-        return ResponseEntity.ok(cellService.createCell(notebookId, cellType, language, source, position, principal.toString()));
+        NotebookCellDto cell = cellService.createCell(notebookId, cellType, language, source, position, principal.toString());
+        cell.setMessage("Cell created successfully");
+        return ResponseEntity.ok(cell);
     }
 
     @GetMapping("/cells/{cellId}")
     public ResponseEntity<NotebookCellDto> getCell(@PathVariable("notebookId") String notebookId,
                                                    @PathVariable("cellId") String cellId,
                                                    @AuthenticationPrincipal Object principal) {
-        return ResponseEntity.ok(cellService.getCell(notebookId, cellId, principal.toString()));
+        NotebookCellDto cell = cellService.getCell(notebookId, cellId, principal.toString());
+        cell.setMessage("Cell retrieved successfully");
+        return ResponseEntity.ok(cell);
     }
 
     @PatchMapping("/cells/{cellId}")
@@ -53,25 +57,32 @@ public class NotebookCellController {
         String language = (String) body.get("language");
         String source = (String) body.get("source");
 
-        return ResponseEntity.ok(cellService.updateCell(notebookId, cellId, cellType, language, source, principal.toString()));
+        NotebookCellDto cell = cellService.updateCell(notebookId, cellId, cellType, language, source, principal.toString());
+        cell.setMessage("Cell updated successfully");
+        return ResponseEntity.ok(cell);
     }
 
     @DeleteMapping("/cells/{cellId}")
-    public ResponseEntity<Void> deleteCell(@PathVariable("notebookId") String notebookId,
-                                           @PathVariable("cellId") String cellId,
-                                           @AuthenticationPrincipal Object principal) {
+    public ResponseEntity<Map<String, Object>> deleteCell(@PathVariable("notebookId") String notebookId,
+                                                          @PathVariable("cellId") String cellId,
+                                                          @AuthenticationPrincipal Object principal) {
         cellService.deleteCell(notebookId, cellId, principal.toString());
-        return ResponseEntity.noContent().build();
+        return ResponseEntity.ok(Map.of(
+                "message", "Cell deleted successfully",
+                "cellId", cellId
+        ));
     }
 
     @PutMapping(path = "/cells:reorder")
-    public ResponseEntity<Void> reorderCells(@PathVariable("notebookId") String notebookId,
-                                             @RequestBody Map<String, Object> body,
-                                             @AuthenticationPrincipal Object principal) {
+    public ResponseEntity<Map<String, Object>> reorderCells(@PathVariable("notebookId") String notebookId,
+                                                            @RequestBody Map<String, Object> body,
+                                                            @AuthenticationPrincipal Object principal) {
         @SuppressWarnings("unchecked")
         List<String> cellIds = (List<String>) body.get("cellIds");
         Long version = body.get("version") != null ? Long.valueOf(body.get("version").toString()) : null;
         cellService.reorderCells(notebookId, cellIds, version, principal.toString());
-        return ResponseEntity.noContent().build();
+        return ResponseEntity.ok(Map.of(
+                "message", "Cells reordered successfully"
+        ));
     }
 }

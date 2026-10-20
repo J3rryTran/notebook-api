@@ -39,6 +39,7 @@ public class AuthConfigController {
             resp.put("verified", true);
         }
 
+        resp.put("message", "Auth configuration retrieved successfully");
         return ResponseEntity.ok(resp);
     }
 }

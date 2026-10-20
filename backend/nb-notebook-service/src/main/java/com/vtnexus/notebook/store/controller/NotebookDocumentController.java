@@ -42,6 +42,7 @@ public class NotebookDocumentController {
         List<Map<String, Object>> cells = (List<Map<String, Object>>) body.get("cells");
 
         Notebook nb = notebookService.createNotebook(name, folderId, description, defaultCatalog, defaultSchema, cells, principal.toString());
+        nb.setMessage("Notebook created successfully");
         return ResponseEntity.ok(nb);
     }
 
@@ -54,6 +55,7 @@ public class NotebookDocumentController {
         Map<String, Object> res = new HashMap<>();
         res.put("items", list);
         res.put("hasMore", false);
+        res.put("message", "Notebooks retrieved successfully");
         return ResponseEntity.ok(res);
     }
 
@@ -73,6 +75,7 @@ public class NotebookDocumentController {
         res.put("owner", nb.getOwner());
         res.put("version", nb.getLockVersion());
         res.put("role", notebookService.checkAccess(nb, principal.toString(), "VIEWER"));
+        res.put("message", "Notebook retrieved successfully");
 
         if (includeCells) {
             res.put("cells", cellService.getCells(notebookId, principal.toString()));
@@ -90,16 +93,21 @@ public class NotebookDocumentController {
         String defaultSchema = (String) body.get("defaultSchema");
         Long version = body.get("version") != null ? Long.valueOf(body.get("version").toString()) : null;
 
-        return ResponseEntity.ok(notebookService.updateNotebook(notebookId, name, description, defaultCatalog, defaultSchema, version, principal.toString()));
+        Notebook updated = notebookService.updateNotebook(notebookId, name, description, defaultCatalog, defaultSchema, version, principal.toString());
+        updated.setMessage("Notebook updated successfully");
+        return ResponseEntity.ok(updated);
     }
 
     @DeleteMapping("/notebooks/{notebookId}")
-    public ResponseEntity<Void> deleteNotebook(@PathVariable("notebookId") String notebookId,
-                                               @RequestParam(value = "version", required = false) Long version,
-                                               @RequestParam(value = "purge", defaultValue = "false") boolean purge,
-                                               @AuthenticationPrincipal Object principal) {
+    public ResponseEntity<Map<String, Object>> deleteNotebook(@PathVariable("notebookId") String notebookId,
+                                                              @RequestParam(value = "version", required = false) Long version,
+                                                              @RequestParam(value = "purge", defaultValue = "false") boolean purge,
+                                                              @AuthenticationPrincipal Object principal) {
         notebookService.deleteNotebook(notebookId, version, principal.toString(), purge);
-        return ResponseEntity.noContent().build();
+        return ResponseEntity.ok(Map.of(
+                "message", "Notebook deleted successfully",
+                "id", notebookId
+        ));
     }
 
     @PostMapping(path = "/notebooks:import")
@@ -109,7 +117,9 @@ public class NotebookDocumentController {
         String name = body.get("name");
         String folderId = body.get("folderId");
         String content = body.get("content");
-        return ResponseEntity.ok(conversionService.importNotebook(format, name, folderId, content, principal.toString()));
+        Notebook imported = conversionService.importNotebook(format, name, folderId, content, principal.toString());
+        imported.setMessage("Notebook imported successfully");
+        return ResponseEntity.ok(imported);
     }
 
     @GetMapping("/notebooks/{notebookId}:export")
@@ -127,7 +137,10 @@ public class NotebookDocumentController {
     public ResponseEntity<Map<String, Object>> getPermissions(@PathVariable("notebookId") String notebookId,
                                                               @AuthenticationPrincipal Object principal) {
         List<NotebookPermission> perms = notebookService.getPermissions(notebookId, principal.toString());
-        return ResponseEntity.ok(Map.of("permissions", perms));
+        return ResponseEntity.ok(Map.of(
+                "permissions", perms,
+                "message", "Permissions retrieved successfully"
+        ));
     }
 
     @PutMapping("/notebooks/{notebookId}/permissions")
@@ -136,6 +149,9 @@ public class NotebookDocumentController {
                                                                  @AuthenticationPrincipal Object principal) {
         List<Map<String, String>> perms = (List<Map<String, String>>) body.get("permissions");
         List<NotebookPermission> saved = notebookService.updatePermissions(notebookId, perms, principal.toString());
-        return ResponseEntity.ok(Map.of("permissions", saved));
+        return ResponseEntity.ok(Map.of(
+                "permissions", saved,
+                "message", "Permissions updated successfully"
+        ));
     }
 }

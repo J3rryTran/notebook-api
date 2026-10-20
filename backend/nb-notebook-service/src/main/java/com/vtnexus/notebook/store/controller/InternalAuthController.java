@@ -55,7 +55,8 @@ public class InternalAuthController {
         return ResponseEntity.ok(Map.of(
                 "username", info.username(),
                 "authorizationHeader", info.authorizationHeader(),
-                "isAdmin", info.isAdmin()
+                "isAdmin", info.isAdmin(),
+                "message", "Session resolved successfully"
         ));
     }
 }

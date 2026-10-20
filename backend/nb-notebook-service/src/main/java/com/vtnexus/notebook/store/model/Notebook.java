@@ -73,4 +73,8 @@ public class Notebook {
 
     @Column(name = "kyuubi_notebook_id", length = 64)
     private String kyuubiNotebookId;
+
+    @Transient
+    @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+    private String message;
 }
