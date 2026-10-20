@@ -58,7 +58,18 @@ public class NotebookExecutionController {
         Map<String, Object> resp = new HashMap<>();
         resp.put("session", result.session());
         resp.put("warnings", result.warnings());
+        resp.put("message", sessionMessage(result));
         return ResponseEntity.ok(resp);
+    }
+
+    private static String sessionMessage(ExecutionService.SessionCreationResult result) {
+        String status = result.session().getStatus();
+        String base = "READY".equals(status) || "BUSY".equals(status)
+                ? "Kyuubi session is ready"
+                : "Kyuubi session is " + status.toLowerCase(Locale.ROOT);
+        return result.warnings() != null && !result.warnings().isEmpty()
+                ? base + " (" + result.warnings().size() + " warning(s))"
+                : base;
     }
 
     @PostMapping("/notebook-sessions/{sessionId}/executions")
