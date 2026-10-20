@@ -113,6 +113,9 @@ public class KyuubiRestClient {
             String sessionId = respBody.get("identifier").asText();
             String instance = respBody.has("kyuubiInstance") ? respBody.get("kyuubiInstance").asText() : null;
 
+            log.info("Kyuubi openSession succeeded: sessionId={}, kyuubiInstance={}, proxyUser={}, baseUrl={}",
+                    sessionId, instance, proxyUser, defaultBaseUrl);
+
             return Map.of("sessionId", sessionId, "instance", instance != null ? instance : "");
 
         } catch (HttpStatusCodeException ex) {
@@ -149,7 +152,10 @@ public class KyuubiRestClient {
             if (respBody == null || !respBody.has("identifier")) {
                 throw new NotebookApiException("KYUUBI_ERROR", "Failed to retrieve operation ID from Kyuubi", HttpStatus.BAD_GATEWAY);
             }
-            return respBody.get("identifier").asText();
+            String opId = respBody.get("identifier").asText();
+            log.info("Kyuubi submitStatement succeeded: operationId={}, sessionId={}, kyuubiInstance={}, language={}, baseUrl={}",
+                    opId, sessionId, instance, language, baseUrl);
+            return opId;
 
         } catch (HttpStatusCodeException ex) {
             handleHttpStatusException(ex);

@@ -3,6 +3,7 @@ package com.vtnexus.notebook.execution.config;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.vtnexus.notebook.common.auth.*;
 import com.vtnexus.notebook.execution.client.InternalSessionClient;
+import jakarta.servlet.DispatcherType;
 import jakarta.servlet.Filter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -53,6 +54,7 @@ public class SecurityConfig {
         http
             .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
+                .dispatcherTypeMatchers(DispatcherType.ASYNC, DispatcherType.ERROR).permitAll()
                 .requestMatchers("/actuator/**", "/internal/**").permitAll()
                 .anyRequest().authenticated()
             )

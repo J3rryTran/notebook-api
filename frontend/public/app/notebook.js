@@ -319,6 +319,8 @@ function setSaveStatus(status) {
   }
 }
 
+let visibilityListenerAttached = false;
+
 async function pollKyuubiStatus() {
   const el = document.getElementById('kyuubiStatusIndicator');
   if (!el) return;
@@ -328,10 +330,11 @@ async function pollKyuubiStatus() {
     if (res.ok) {
       const data = await res.json();
       const isHealthy = data.kyuubi === 'HEALTHY';
+      const checkedAtStr = data.checkedAt ? ` | Cập nhật: ${new Date(data.checkedAt).toLocaleTimeString()}` : '';
       if (isHealthy) {
         el.className = 'kyuubi-status-badge healthy';
         el.innerHTML = '<span class="status-dot"></span> Kyuubi: Sẵn sàng';
-        el.title = `Kyuubi: Sẵn sàng | Active runs: ${data.active || 0} | Sessions: ${data.activeSessions || 0}`;
+        el.title = `Kyuubi: Sẵn sàng | Active runs: ${data.active || 0} | Sessions: ${data.activeSessions || 0}${checkedAtStr}`;
       } else {
         el.className = 'kyuubi-status-badge unhealthy';
         el.innerHTML = '<span class="status-dot"></span> Kyuubi: Mất kết nối';
@@ -348,7 +351,29 @@ async function pollKyuubiStatus() {
 }
 
 function startKyuubiStatusPolling() {
-  if (kyuubiStatusTimer) clearInterval(kyuubiStatusTimer);
-  pollKyuubiStatus();
-  kyuubiStatusTimer = setInterval(pollKyuubiStatus, 15000);
+  if (kyuubiStatusTimer) {
+    clearInterval(kyuubiStatusTimer);
+    kyuubiStatusTimer = null;
+  }
+
+  if (document.visibilityState === 'visible') {
+    pollKyuubiStatus();
+    kyuubiStatusTimer = setInterval(pollKyuubiStatus, 60000);
+  }
+
+  if (!visibilityListenerAttached) {
+    visibilityListenerAttached = true;
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') {
+        if (kyuubiStatusTimer) clearInterval(kyuubiStatusTimer);
+        pollKyuubiStatus();
+        kyuubiStatusTimer = setInterval(pollKyuubiStatus, 60000);
+      } else {
+        if (kyuubiStatusTimer) {
+          clearInterval(kyuubiStatusTimer);
+          kyuubiStatusTimer = null;
+        }
+      }
+    });
+  }
 }

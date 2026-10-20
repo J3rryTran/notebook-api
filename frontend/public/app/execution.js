@@ -140,25 +140,84 @@ async function runCell(cellId, event) {
 
     // 3. Long-poll trạng thái execution
     let finalStatus = execDto.status;
+    let pollError = null;
+    let unavailableRetries = 0;
+    const maxUnavailableRetries = 5;
+    const maxWaitMs = (window.notebookConfig && window.notebookConfig.executionMaxWait) || 30 * 60 * 1000;
+
     while (finalStatus === 'PENDING' || finalStatus === 'RUNNING') {
       if (cancelRequested) {
         finalStatus = 'CANCELED';
         break;
       }
 
+      if (Date.now() - startTime > maxWaitMs) {
+        pollError = {
+          ename: 'TimeoutError',
+          evalue: `Quá thời gian chờ thực thi (${Math.round(maxWaitMs / 60000)} phút). Bạn có thể kiểm tra lại trạng thái cell.`
+        };
+        finalStatus = 'TIMEOUT';
+        break;
+      }
+
       try {
         const pollRes = await api(`/api/v1/executions/${runningExecutionId}/events?waitMillis=3000`);
         if (pollRes.status === 200) {
+          unavailableRetries = 0;
           const pollData = await pollRes.json();
           finalStatus = pollData.status;
         } else if (pollRes.status === 204) {
+          unavailableRetries = 0;
           // Timeout, kiểm tra lại qua endpoint chi tiết
           const checkRes = await api(`/api/v1/executions/${runningExecutionId}`);
           if (checkRes.ok) {
             const checkData = await checkRes.json();
             finalStatus = checkData.status;
           }
+        } else if (pollRes.status === 401) {
+          showLoginModal('Phiên đăng nhập đã hết hạn hoặc không hợp lệ.');
+          pollError = {
+            ename: 'Unauthorized',
+            evalue: '401 UNAUTHORIZED: Phiên đăng nhập đã hết hạn.'
+          };
+          finalStatus = 'ERROR';
+          break;
+        } else if (pollRes.status === 503) {
+          unavailableRetries++;
+          if (unavailableRetries <= maxUnavailableRetries) {
+            const backoffMs = Math.min(1000 * Math.pow(2, unavailableRetries - 1), 30000);
+            if (statusEl && !cancelRequested) {
+              statusEl.innerHTML = `<span class="status-badge running"><i class="fa-solid fa-spinner fa-spin"></i> Kyuubi tạm không phản hồi, đang thử lại (${unavailableRetries}/${maxUnavailableRetries})</span>`;
+            }
+            await new Promise(r => setTimeout(r, backoffMs));
+            continue;
+          } else {
+            pollError = {
+              ename: 'KyuubiUnavailable',
+              evalue: `503 KYUUBI_UNAVAILABLE: Kyuubi tạm không phản hồi sau ${maxUnavailableRetries} lần thử lại.`
+            };
+            finalStatus = 'ERROR';
+            break;
+          }
         } else {
+          unavailableRetries = 0;
+          let errCode = 'UNKNOWN_ERROR';
+          let errMsg = `HTTP ${pollRes.status}`;
+          try {
+            const errJson = await pollRes.json();
+            if (errJson.code) errCode = errJson.code;
+            if (errJson.message) errMsg = errJson.message;
+          } catch (_) {
+            try {
+              const text = await pollRes.text();
+              if (text && text.trim()) errMsg = text.trim();
+            } catch (__) {}
+          }
+          pollError = {
+            ename: 'PollError',
+            evalue: `${pollRes.status} ${errCode}: ${errMsg}`
+          };
+          finalStatus = 'ERROR';
           break;
         }
       } catch (pollErr) {
@@ -171,7 +230,7 @@ async function runCell(cellId, event) {
     const durationMs = Date.now() - startTime;
 
     // 4. Lấy kết quả và render tương ứng
-    await handleExecutionCompleted(runningExecutionId, cellId, finalStatus, durationMs);
+    await handleExecutionCompleted(runningExecutionId, cellId, finalStatus, durationMs, pollError);
 
   } catch (err) {
     if (timerInterval) clearInterval(timerInterval);
@@ -187,10 +246,13 @@ async function runCell(cellId, event) {
   } finally {
     runningExecutionId = null;
     runningCellId = null;
+    if (typeof pollKyuubiStatus === 'function') {
+      pollKyuubiStatus();
+    }
   }
 }
 
-async function handleExecutionCompleted(executionId, cellId, status, durationMs) {
+async function handleExecutionCompleted(executionId, cellId, status, durationMs, pollError = null) {
   const countEl = document.getElementById(`count-${cellId}`);
   const statusEl = document.getElementById(`status-${cellId}`);
   const outputEl = document.getElementById(`output-${cellId}`);
@@ -278,13 +340,41 @@ async function handleExecutionCompleted(executionId, cellId, status, durationMs)
       statusEl.innerHTML = '<span class="status-badge canceled">Đã huỷ</span>';
     }
     outputEl.innerHTML = renderStreamOutput('Lệnh thực thi đã bị huỷ bởi người dùng.');
+  } else if (status === 'ERROR') {
+    if (statusEl) {
+      statusEl.innerHTML = '<span class="status-badge failed">Lỗi</span>';
+    }
+    outputEl.innerHTML = renderErrorOutput(pollError || {
+      ename: 'PollError',
+      evalue: (execDto && execDto.errorMessage) ? execDto.errorMessage : 'Lỗi trong quá trình theo dõi thực thi.'
+    }, executionId || ('error-' + Date.now()));
+  } else if (status === 'TIMEOUT') {
+    if (statusEl) {
+      statusEl.innerHTML = '<span class="status-badge failed">Hết giờ</span>';
+    }
+    outputEl.innerHTML = `<div class="stream-output error-text" style="padding: 10px; margin-bottom: 8px;">${escapeHtml(pollError ? pollError.evalue : 'Quá thời gian chờ thực thi.')}</div>
+      <button class="btn btn-secondary btn-sm" onclick="checkExecutionStatus('${executionId}', '${cellId}')"><i class="fa-solid fa-arrows-rotate"></i> Kiểm tra lại</button>`;
   } else {
     if (statusEl) {
       statusEl.innerHTML = `<span class="status-badge failed">${status}</span>`;
     }
-    outputEl.innerHTML = renderStreamOutput(`Trạng thái thực thi: ${status}`);
+    const detailMsg = (execDto && execDto.errorMessage) ? `: ${execDto.errorMessage}` : '';
+    outputEl.innerHTML = renderStreamOutput(`Trạng thái thực thi: ${status}${detailMsg}`);
   }
 }
+
+async function checkExecutionStatus(executionId, cellId) {
+  try {
+    const res = await api(`/api/v1/executions/${executionId}`);
+    if (res.ok) {
+      const data = await res.json();
+      await handleExecutionCompleted(executionId, cellId, data.status, 0);
+    }
+  } catch (e) {
+    console.error('Không thể kiểm tra trạng thái execution:', e);
+  }
+}
+window.checkExecutionStatus = checkExecutionStatus;
 
 async function runAllCells() {
   if (!currentNotebook || !currentNotebook.cells || currentNotebook.cells.length === 0) {

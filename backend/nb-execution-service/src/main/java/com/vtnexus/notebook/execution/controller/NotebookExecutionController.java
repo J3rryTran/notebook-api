@@ -345,7 +345,7 @@ public class NotebookExecutionController {
 
         long now = System.currentTimeMillis();
         boolean kyuubiOk;
-        if (cachedKyuubiPing != null && (now - lastKyuubiPingTime < 10000)) {
+        if (cachedKyuubiPing != null && (now - lastKyuubiPingTime < 30000)) {
             kyuubiOk = cachedKyuubiPing;
         } else {
             kyuubiOk = kyuubiRestClient.ping(auth);
@@ -354,15 +354,15 @@ public class NotebookExecutionController {
         }
 
         boolean persistenceOk = false;
-        try (java.sql.Connection conn = dataSource.getConnection();
-             java.sql.Statement stmt = conn.createStatement()) {
-            stmt.execute("SELECT 1");
+        long activeCount = 0;
+        long queuedCount = 0;
+        long userSessions = 0;
+        try {
+            activeCount = cellRunRepository.countByUserAndStatus(user, "RUNNING");
+            queuedCount = cellRunRepository.countByUserAndStatus(user, "PENDING");
+            userSessions = sessionRepository.countByUserIdAndStatusIn(user, java.util.List.of("READY", "BUSY"));
             persistenceOk = true;
         } catch (Exception ignored) {}
-
-        long activeCount = cellRunRepository.countByUserAndStatus(user, "RUNNING");
-        long queuedCount = cellRunRepository.countByUserAndStatus(user, "PENDING");
-        long userSessions = sessionRepository.countByUserIdAndStatusIn(user, java.util.List.of("READY", "BUSY"));
 
         Map<String, Object> resp = new HashMap<>();
         resp.put("kyuubi", kyuubiOk ? "HEALTHY" : "UNHEALTHY");
@@ -370,6 +370,7 @@ public class NotebookExecutionController {
         resp.put("active", activeCount);
         resp.put("queued", queuedCount);
         resp.put("activeSessions", userSessions);
+        resp.put("checkedAt", java.time.Instant.now().toString());
         resp.put("message", (kyuubiOk && persistenceOk) ? "All services healthy" : "Service health degraded");
 
         return ResponseEntity.ok(resp);

@@ -17,9 +17,14 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.request;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import org.springframework.test.web.servlet.MvcResult;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -102,5 +107,39 @@ class ExecutionCsrfTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"cellId\":\"c1\"}"))
                 .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void getEventsWithAsyncDispatchSucceeds() throws Exception {
+        when(internalSessionClient.resolve("sess-123"))
+                .thenReturn(new SessionInfo("alice", "Basic YWxpY2U6cGFzcw==", false));
+        when(executionService.syncAndGetExecution(eq("exec-1"), eq("alice"), any()))
+                .thenReturn(NotebookExecutionDto.builder().id("exec-1").status("FINISHED").build());
+
+        MvcResult r = mockMvc.perform(get("/api/v1/executions/exec-1/events")
+                        .cookie(new Cookie(SessionCookieFilter.COOKIE_NAME, "sess-123"))
+                        .param("waitMillis", "2000"))
+                .andExpect(request().asyncStarted())
+                .andReturn();
+
+        mockMvc.perform(asyncDispatch(r))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void getEventsTimeoutReturns204NoContent() throws Exception {
+        when(internalSessionClient.resolve("sess-123"))
+                .thenReturn(new SessionInfo("alice", "Basic YWxpY2U6cGFzcw==", false));
+        when(executionService.syncAndGetExecution(eq("exec-1"), eq("alice"), any()))
+                .thenReturn(NotebookExecutionDto.builder().id("exec-1").status("RUNNING").build());
+
+        MvcResult r = mockMvc.perform(get("/api/v1/executions/exec-1/events")
+                        .cookie(new Cookie(SessionCookieFilter.COOKIE_NAME, "sess-123"))
+                        .param("waitMillis", "500"))
+                .andExpect(request().asyncStarted())
+                .andReturn();
+
+        mockMvc.perform(asyncDispatch(r))
+                .andExpect(status().isNoContent());
     }
 }
