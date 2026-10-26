@@ -110,6 +110,13 @@ class MariaDbBaselineMigrationIT {
                         "--notebook.auth.mode=oidc",
                         "--notebook.internalToken=secret-token-it",
                         "--notebook.internal-token=secret-token-it",
+                        "--notebook.encryption-key=MTIzNDU2Nzg5MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTI=",
+                        "--notebook.auth.oidc.jwt.issuer=https://keycloak.it.invalid/realms/it",
+                        "--notebook.auth.oidc.jwt.audience=kyuubi",
+                        "--notebook.auth.oidc.jwt.jwks-url=http://keycloak.it.invalid/certs",
+                        "--notebook.auth.oidc.ui.client-secret=it-secret",
+                        "--notebook.auth.oidc.authorization-endpoint=https://keycloak.it.invalid/auth",
+                        "--notebook.auth.oidc.token-endpoint=http://keycloak.it.invalid/token",
                         "--spring.main.web-application-type=servlet"
                 )) {
 

@@ -64,14 +64,20 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 
 {{- if eq .Values.auth.mode "oidc" }}
-  {{- $rp := .Values.auth.oidc.redirectPath | default "/auth/callback" }}
-  {{- if or (not (hasPrefix "/" $rp)) (hasPrefix "//" $rp) (contains "://" $rp) (hasPrefix "/api/" $rp) (hasPrefix "/internal/" $rp) (hasPrefix "/actuator/" $rp) }}
-    {{- fail "auth.oidc.redirectPath must start with / and not be under /api/, /internal/ or /actuator/" }}
+  {{- $o := .Values.auth.oidc | default dict }}
+  {{- $jwt := $o.jwt | default dict }}
+  {{- $ui := $o.ui | default dict }}
+  {{- if not $jwt.issuer }}{{ fail "auth.oidc.jwt.issuer is required for mode=oidc" }}{{ end }}
+  {{- if not $jwt.jwksUrl }}{{ fail "auth.oidc.jwt.jwksUrl is required for mode=oidc" }}{{ end }}
+  {{- if not $jwt.audience }}{{ fail "auth.oidc.jwt.audience is required for mode=oidc" }}{{ end }}
+  {{- if not $ui.clientId }}{{ fail "auth.oidc.ui.clientId is required for mode=oidc" }}{{ end }}
+  {{- if not $o.authorizationEndpoint }}{{ fail "auth.oidc.authorizationEndpoint is required for mode=oidc" }}{{ end }}
+  {{- if not $o.tokenEndpoint }}{{ fail "auth.oidc.tokenEndpoint is required for mode=oidc" }}{{ end }}
+  {{- with $o.redirectUri }}
+    {{- if not (regexMatch "^https?://[^/]+/api/v1/auth/callback$" .) }}
+      {{- fail "auth.oidc.redirectUri must be http(s)://<host>/api/v1/auth/callback" }}
+    {{- end }}
   {{- end }}
-{{- end }}
-
-{{- if and (eq .Values.auth.mode "oidc") (not .Values.auth.oidc.issuer) }}
-  {{- fail "auth.oidc.issuer is required for mode=oidc" }}
 {{- end }}
 
 {{- if eq .Values.auth.mode "ldap" }}
@@ -131,5 +137,14 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- define "notebook.ldapBindpw" -}}
 {{- if eq .Values.auth.mode "ldap" -}}
 {{- (.Values.auth.ldap | default dict).bindpw | default "" -}}
+{{- end -}}
+{{- end }}
+
+{{- define "notebook.oidcInlineSecret" -}}
+{{- if eq .Values.auth.mode "oidc" -}}
+{{- $o := .Values.auth.oidc | default dict -}}
+{{- $ui := $o.ui | default dict -}}
+{{- $sa := $o.serviceAccount | default dict -}}
+{{- if or $ui.clientSecret (and $sa.enabled $sa.clientSecret) -}}true{{- end -}}
 {{- end -}}
 {{- end }}

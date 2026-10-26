@@ -14,6 +14,10 @@ import java.util.List;
 public interface NotebookAuthSessionRepository extends JpaRepository<NotebookAuthSession, String> {
     List<NotebookAuthSession> findByUsername(String username);
 
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT s FROM NotebookAuthSession s WHERE s.id = :id")
+    java.util.Optional<NotebookAuthSession> findByIdForUpdate(@Param("id") String id);
+
     @Modifying
     @Query("DELETE FROM NotebookAuthSession s WHERE s.expiresAt < :now")
     int deleteExpiredSessions(@Param("now") Instant now);

@@ -18,19 +18,19 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 public class SecurityConfig {
 
     private final AuthProperties authProperties;
-    private final BearerDelegationAuthenticator bearerAuthenticator;
+    private final OidcTokenVerifiers oidcTokenVerifiers;
     private final InternalSessionClient internalSessionClient;
     private final ObjectMapper objectMapper;
     private final String internalToken;
 
     public SecurityConfig(
             AuthProperties authProperties,
-            BearerDelegationAuthenticator bearerAuthenticator,
+            OidcTokenVerifiers oidcTokenVerifiers,
             InternalSessionClient internalSessionClient,
             ObjectMapper objectMapper,
             com.vtnexus.notebook.common.config.NotebookProperties notebookProperties) {
         this.authProperties = authProperties;
-        this.bearerAuthenticator = bearerAuthenticator;
+        this.oidcTokenVerifiers = oidcTokenVerifiers;
         this.internalSessionClient = internalSessionClient;
         this.objectMapper = objectMapper;
         this.internalToken = notebookProperties.getInternalToken();
@@ -44,10 +44,8 @@ public class SecurityConfig {
             throw new IllegalStateException("Unsupported or missing auth mode: " + authProperties.getMode());
         }
 
-        Filter authFilter = switch (mode) {
-            case NO_OIDC, LDAP -> new SessionCookieFilter(internalSessionClient, objectMapper);
-            case OIDC -> new BearerFilter(bearerAuthenticator, objectMapper);
-        };
+        Filter authFilter = new SessionCookieFilter(internalSessionClient, objectMapper,
+                mode == AuthMode.OIDC ? oidcTokenVerifiers : null);
 
         CsrfSupport.apply(http, mode);
 

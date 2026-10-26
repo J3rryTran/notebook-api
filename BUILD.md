@@ -18,7 +18,7 @@ Build và đóng gói không đụng tới chart `notebook-helm`; kiểm chart l
 |---|---|---|
 | B1 | `mvn clean verify` trong `maven:3.9.9-eclipse-temurin-17`: unit test + test MariaDB (Testcontainers). Tự dò phiên bản Docker API của máy (`docker version`) và truyền cho Testcontainers, nên chạy được với Docker cũ (20.10, API 1.41) lẫn mới (29+) | Bất kỳ test nào đỏ. Không có cờ bỏ qua test |
 | B2 | Mỗi service ra đúng 1 Spring Boot fat jar | Thiếu/thừa jar |
-| B3 | Frontend tự chứa (không tải từ CDN), checksum `vendor/oidc-client-ts.min.js` khớp | Có `http(s)://` trong `src`/`href`; checksum lệch |
+| B3 | Frontend tự chứa (không tải từ CDN) | Có `http(s)://` trong `src`/`href` |
 | B4 | ShellCheck `docker/*.sh`, `scripts/build.sh`, `scripts/package-image.sh`; `nginx -t` | Lỗi cú pháp |
 | B5 | Gom `dist/image-context/`: `app/*.jar`, `web/`, `conf/nginx.conf`, `bin/`, `Dockerfile`, `BUILD-INFO` (git sha, thời điểm, số test), `SHA256SUMS` | Phát hiện mã nguồn trong context |
 

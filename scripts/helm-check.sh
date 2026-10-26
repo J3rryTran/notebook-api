@@ -16,7 +16,11 @@ fi
 
 ENV_SETS=(--set mariadb.host=mariadb.build-check.invalid
           --set kyuubi.restUrl=http://kyuubi.build-check.invalid:10099
-          --set auth.oidc.issuer=https://keycloak.build-check.invalid/realms/check
+          --set auth.oidc.jwt.issuer=https://keycloak.build-check.invalid/realms/check
+          --set auth.oidc.jwt.jwksUrl=http://keycloak.build-check.invalid/certs
+          --set auth.oidc.authorizationEndpoint=https://keycloak.build-check.invalid/auth
+          --set auth.oidc.tokenEndpoint=http://keycloak.build-check.invalid/token
+          --set auth.oidc.redirectUri=http://notebook.build-check.invalid/api/v1/auth/callback
           --set auth.ldap.url=ldaps://ldap.build-check.invalid:636
           --set service.nodePort=null)
 HELM_T=("${HELM[@]}" template t /c "${ENV_SETS[@]}")
@@ -45,6 +49,9 @@ echo "Rendering chart (values.yaml + giá trị môi trường giả, auth.mode=
 
 echo "Rendering all auth modes (template sanity only)..."
 "${HELM_T[@]}" --set auth.mode=oidc >/dev/null
+out=$("${HELM_T[@]}" --set auth.mode=oidc --set auth.oidc.ui.clientSecret=s1 --set auth.oidc.serviceAccount.enabled=true --set auth.oidc.serviceAccount.clientSecret=s2)
+echo "$out" | grep -q "name: t-notebook-oidc" || { echo "FAILED: inline oidc secret not rendered"; exit 1; }
+echo "$out" | grep -q "checksum/oidc" || { echo "FAILED: oidc checksum annotation missing"; exit 1; }
 "${HELM_T[@]}" --set auth.mode=no-oidc >/dev/null
 "${HELM_T[@]}" "${LDAP_SETS[@]}" >/dev/null
 "${HELM_T[@]}" "${LDAP_SETS[@]}" --set auth.ldap.trustStore.enabled=true >/dev/null
@@ -55,7 +62,7 @@ echo "$out" | grep -q "requiredDuringSchedulingIgnoredDuringExecution" || { echo
 out=$("${HELM_T[@]}" --set ha.antiAffinity=none)
 if echo "$out" | grep -q "podAntiAffinity"; then echo "FAILED: none still renders anti-affinity"; exit 1; fi
 
-echo "=== 3. Helm Template 17 Validation Error Cases ==="
+echo "=== 3. Helm Template 18 Validation Error Cases ==="
 
 test_error() {
   local desc="$1"
@@ -84,7 +91,9 @@ test_error "mariadb.host empty" "mariadb.host is required" --set mariadb.host=""
 
 test_error "kyuubi.restUrl empty" "kyuubi.restUrl is required" --set kyuubi.restUrl=""
 
-test_error "mode=oidc and issuer empty" "auth.oidc.issuer is required for mode=oidc" --set auth.mode=oidc --set auth.oidc.issuer=""
+test_error "mode=oidc and issuer empty" "auth.oidc.jwt.issuer is required for mode=oidc" --set auth.mode=oidc --set auth.oidc.jwt.issuer=""
+
+test_error "mode=oidc and tokenEndpoint empty" "auth.oidc.tokenEndpoint is required for mode=oidc" --set auth.mode=oidc --set auth.oidc.tokenEndpoint=""
 
 test_error "mode=ldap without ldap block" "auth.ldap block is required for mode=ldap" --set auth.mode=ldap --set auth.ldap=null
 
@@ -104,7 +113,7 @@ test_error "PDB minAvailable >= replicaCount" "must be < replicaCount" --set pod
 
 test_error "updateStrategy both zero" "updateStrategy.maxUnavailable and maxSurge cannot both be 0" --set updateStrategy.maxUnavailable=0 --set updateStrategy.maxSurge=0
 
-test_error "oidc redirectPath under /api/" "auth.oidc.redirectPath must start with /" --set auth.mode=oidc --set auth.oidc.redirectPath=/api/v1/cb
+test_error "oidc redirectUri wrong path" "auth.oidc.redirectUri must be http(s)://<host>/api/v1/auth/callback" --set auth.mode=oidc --set auth.oidc.redirectUri=http://x/auth/callback
 
 test_error "ingress.enabled without host" "ingress.host is required" --set ingress.enabled=true --set ingress.host=""
 

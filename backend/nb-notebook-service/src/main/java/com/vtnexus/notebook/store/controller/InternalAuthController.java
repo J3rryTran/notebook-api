@@ -42,11 +42,6 @@ public class InternalAuthController {
 
         verifyInternalToken(token);
 
-        AuthMode mode = AuthMode.fromString(authProperties.getMode());
-        if (mode == AuthMode.OIDC) {
-            throw new NotebookApiException("NOT_FOUND", "Session lookup is disabled in OIDC mode", HttpStatus.NOT_FOUND);
-        }
-
         SessionInfo info = sessionService.resolveSession(sessionId);
         if (info == null) {
             throw new NotebookApiException("SESSION_NOT_FOUND", "Session expired or not found", HttpStatus.NOT_FOUND);

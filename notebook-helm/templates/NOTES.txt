@@ -3,8 +3,12 @@ Notebook {{ .Chart.AppVersion }} (chart {{ .Chart.Version }}, contract 2), auth.
 [Secret] `{{ .Values.existingSecret }}` cần có các keys:
    - {{ .Values.secretKeys.dbPassword }} (bắt buộc cho kết nối MariaDB)
 {{- if eq .Values.auth.mode "oidc" }}
-{{- if .Values.auth.oidc.serviceAccount.enabled }}
-   - {{ .Values.secretKeys.oidcClientSecret }} (bắt buộc khi auth.oidc.serviceAccount.enabled=true)
+   - {{ .Values.secretKeys.authEncryptionKey }} (32 bytes base64, mã hoá token lưu trong MariaDB)
+{{- if not .Values.auth.oidc.ui.clientSecret }}
+   - {{ .Values.secretKeys.oidcClientSecret }} (client secret của {{ .Values.auth.oidc.ui.clientId }})
+{{- end }}
+{{- if and .Values.auth.oidc.serviceAccount.enabled (not .Values.auth.oidc.serviceAccount.clientSecret) }}
+   - {{ .Values.secretKeys.oidcServiceClientSecret }} (client secret của {{ .Values.auth.oidc.serviceAccount.clientId }})
 {{- end }}
 {{- else }}
 {{- if eq .Values.auth.mode "no-oidc" }}
@@ -39,25 +43,22 @@ Notebook {{ .Chart.AppVersion }} (chart {{ .Chart.Version }}, contract 2), auth.
 
 {{- if eq .Values.auth.mode "oidc" }}
 
-[Keycloak] (realm của issuer {{ .Values.auth.oidc.issuer }}):
-   - Client `{{ .Values.auth.oidc.clientId }}`: PUBLIC (Client authentication = Off), Standard flow + PKCE S256.
-   - Valid redirect URIs: `<địa chỉ mở notebook>{{ .Values.auth.oidc.redirectPath | default "/auth/callback" }}`
-   - Valid post logout redirect URIs: `<địa chỉ mở notebook>/*`
-   - Web origins: `<địa chỉ mở notebook>`
-     (<địa chỉ mở notebook> = http(s)://<IP node>:<NodePort của Service {{ include "notebook.fullname" . }}> hoặc host Ingress)
-   - Audience mapper thêm `kyuubi` vào `aud` (Kyuubi kiểm aud=kyuubi).
-   - Keycloak HTTPS chứng chỉ tự ký: mỗi người dùng mở URL Keycloak và chấp nhận chứng chỉ một lần.
+[Keycloak] (realm của issuer {{ .Values.auth.oidc.jwt.issuer }}):
+   - Client `{{ .Values.auth.oidc.ui.clientId }}`: CONFIDENTIAL (Client authentication = On), Standard flow, PKCE S256.
+   - Valid redirect URIs: `{{ .Values.auth.oidc.redirectUri | default "<địa chỉ mở notebook>/api/v1/auth/callback" }}`
+   - Valid post logout redirect URIs: `<địa chỉ mở notebook>/`
+   - Audience mapper thêm {{ .Values.auth.oidc.jwt.audience | default (list) | join ", " }} vào `aud` của access token (Kyuubi kiểm aud).
+   - Notebook gọi token endpoint và JWKS qua địa chỉ nội bộ, trình duyệt chỉ cần mở được authorizationEndpoint.
 {{- if .Values.auth.oidc.serviceAccount.enabled }}
 
    Proxy user (người dùng có app_users.ranger_username khác username):
    - Client `{{ .Values.auth.oidc.serviceAccount.clientId }}`: CONFIDENTIAL, bật Service accounts roles,
-     audience mapper `kyuubi`; secret đặt vào key `{{ .Values.secretKeys.oidcClientSecret }}`.
+     audience mapper `kyuubi`.
    - Kyuubi thấy user của service account là `preferred_username` trong token client_credentials
      (Keycloak mặc định: `service-account-{{ .Values.auth.oidc.serviceAccount.clientId }}`). Thêm vào
      kyuubi-defaults.conf của Kyuubi server rồi restart Kyuubi:
        hadoop.proxyuser.service-account-{{ .Values.auth.oidc.serviceAccount.clientId }}.users=*
        hadoop.proxyuser.service-account-{{ .Values.auth.oidc.serviceAccount.clientId }}.hosts=*
-     Kiểm tên thật bằng P5.7 (plan/mariadb-auth-plan.md) trước khi ghi.
 {{- end }}
 {{- end }}
 

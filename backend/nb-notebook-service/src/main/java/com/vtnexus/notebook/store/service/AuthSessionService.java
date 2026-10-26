@@ -38,14 +38,25 @@ public class AuthSessionService {
     private final String kyuubiRestUrl;
     private final HttpClient httpClient;
     private final List<String> admins;
+    private final OidcTokenClient oidcTokenClient;
+    private final com.vtnexus.notebook.common.auth.OidcTokenVerifiers oidcTokenVerifiers;
+    private final com.fasterxml.jackson.databind.ObjectMapper objectMapper;
+
+    static final long OIDC_REFRESH_SKEW_MS = 60_000L;
 
     public AuthSessionService(
             NotebookAuthSessionRepository sessionRepository,
             AuthProperties authProperties,
             LdapAuthenticator ldapAuthenticator,
             com.vtnexus.notebook.common.config.NotebookProperties notebookProperties,
-            com.vtnexus.notebook.common.config.KyuubiProperties kyuubiProperties) {
+            com.vtnexus.notebook.common.config.KyuubiProperties kyuubiProperties,
+            OidcTokenClient oidcTokenClient,
+            com.vtnexus.notebook.common.auth.OidcTokenVerifiers oidcTokenVerifiers,
+            com.fasterxml.jackson.databind.ObjectMapper objectMapper) {
         this.sessionRepository = sessionRepository;
+        this.oidcTokenClient = oidcTokenClient;
+        this.oidcTokenVerifiers = oidcTokenVerifiers;
+        this.objectMapper = objectMapper;
         this.authProperties = authProperties;
         this.ldapAuthenticator = ldapAuthenticator;
         this.kyuubiRestUrl = kyuubiProperties.getRestUrl().replaceAll("/+$", "");
@@ -106,6 +117,9 @@ public class AuthSessionService {
 
         if (isLdap(session.getAuthMode())) {
             return resolveLdapSession(session, now);
+        }
+        if (isOidc(session.getAuthMode())) {
+            return resolveOidcSession(session, now);
         }
         if (credentialCrypto == null || session.getCredentialEnc() == null) {
             sessionRepository.delete(session);
@@ -198,6 +212,165 @@ public class AuthSessionService {
 
     private static boolean isLdap(String authMode) {
         return "ldap".equalsIgnoreCase(authMode);
+    }
+
+    private static boolean isOidc(String authMode) {
+        return "oidc".equalsIgnoreCase(authMode);
+    }
+
+    record OidcTokens(String accessToken, String refreshToken, String idToken, long expiresAtMs) {}
+
+    public NotebookAuthSession createOidcSession(String username, OidcTokenClient.Tokens tokens) {
+        requireCrypto();
+        Instant now = Instant.now();
+        OidcTokens stored = new OidcTokens(tokens.accessToken(), tokens.refreshToken(), tokens.idToken(),
+                now.toEpochMilli() + tokens.expiresInSeconds() * 1000L);
+        NotebookAuthSession session = NotebookAuthSession.builder()
+                .id(newSessionId())
+                .username(username)
+                .authMode("oidc")
+                .credentialEnc(encryptTokens(stored))
+                .isAdmin(admins.contains(username))
+                .createdAt(now)
+                .lastSeenAt(now)
+                .lastRecheckAt(now)
+                .expiresAt(now.plus(authProperties.getOidc().getSessionTimeout()))
+                .build();
+        return sessionRepository.save(session);
+    }
+
+    public Optional<String> oidcIdToken(String sessionId) {
+        if (sessionId == null || sessionId.isBlank() || credentialCrypto == null) {
+            return Optional.empty();
+        }
+        return sessionRepository.findById(sessionId)
+                .filter(s -> isOidc(s.getAuthMode()) && s.getCredentialEnc() != null)
+                .flatMap(s -> {
+                    try {
+                        return Optional.ofNullable(decryptTokens(s.getCredentialEnc()).idToken());
+                    } catch (Exception e) {
+                        return Optional.empty();
+                    }
+                });
+    }
+
+    private SessionInfo resolveOidcSession(NotebookAuthSession session, Instant now) {
+        if (credentialCrypto == null || session.getCredentialEnc() == null) {
+            sessionRepository.delete(session);
+            return null;
+        }
+        OidcTokens tokens;
+        try {
+            tokens = decryptTokens(session.getCredentialEnc());
+        } catch (Exception e) {
+            sessionRepository.delete(session);
+            return null;
+        }
+
+        if (needsRefresh(tokens, now)) {
+            NotebookAuthSession locked = sessionRepository.findByIdForUpdate(session.getId()).orElse(null);
+            if (locked == null) {
+                return null;
+            }
+            session = locked;
+            try {
+                tokens = decryptTokens(session.getCredentialEnc());
+            } catch (Exception e) {
+                sessionRepository.delete(session);
+                return null;
+            }
+            if (needsRefresh(tokens, now)) {
+                tokens = refreshOidcTokens(session, tokens, now);
+                if (tokens == null) {
+                    return null;
+                }
+            }
+        }
+
+        if (Duration.between(session.getLastSeenAt(), now).toSeconds() > 60) {
+            session.setLastSeenAt(now);
+            session.setExpiresAt(now.plus(authProperties.getOidc().getSessionTimeout()));
+            sessionRepository.save(session);
+        }
+        return new SessionInfo(session.getUsername(), "Bearer " + tokens.accessToken(), session.isAdmin());
+    }
+
+    private OidcTokens refreshOidcTokens(NotebookAuthSession session, OidcTokens current, Instant now) {
+        if (current.refreshToken() == null || current.refreshToken().isBlank()) {
+            log.info("OIDC session for {} has no refresh token, invalidating", session.getUsername());
+            sessionRepository.delete(session);
+            return null;
+        }
+        OidcTokenClient.Tokens fresh;
+        try {
+            fresh = oidcTokenClient.refresh(current.refreshToken());
+        } catch (OidcTokenClient.TokenEndpointException ex) {
+            if ("invalid_grant".equals(ex.error()) || "invalid_client".equals(ex.error()) || "unauthorized_client".equals(ex.error())) {
+                log.info("OIDC refresh for {} rejected ({}), invalidating session", session.getUsername(), ex.error());
+                sessionRepository.delete(session);
+                return null;
+            }
+            if (current.expiresAtMs() > now.toEpochMilli()) {
+                log.warn("OIDC refresh for {} failed ({}), keeping current access token", session.getUsername(), ex.error());
+                return current;
+            }
+            throw new NotebookApiException("AUTH_BACKEND_UNAVAILABLE", "Identity provider is unavailable", org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE);
+        }
+
+        String username = oidcTokenVerifiers.accessToken().verifyAndGetUsername(fresh.accessToken());
+        if (!username.equals(session.getUsername())) {
+            log.warn("OIDC refresh returned a token for a different user, invalidating session");
+            sessionRepository.delete(session);
+            return null;
+        }
+
+        OidcTokens renewed = new OidcTokens(
+                fresh.accessToken(),
+                fresh.refreshToken() != null ? fresh.refreshToken() : current.refreshToken(),
+                fresh.idToken() != null ? fresh.idToken() : current.idToken(),
+                now.toEpochMilli() + fresh.expiresInSeconds() * 1000L);
+        session.setCredentialEnc(encryptTokens(renewed));
+        session.setLastRecheckAt(now);
+        sessionRepository.save(session);
+        return renewed;
+    }
+
+    private static boolean needsRefresh(OidcTokens tokens, Instant now) {
+        return tokens.expiresAtMs() - now.toEpochMilli() < OIDC_REFRESH_SKEW_MS;
+    }
+
+    private void requireCrypto() {
+        if (credentialCrypto == null) {
+            throw new IllegalStateException("Encryption key is not configured for session storage");
+        }
+    }
+
+    private byte[] encryptTokens(OidcTokens tokens) {
+        try {
+            com.fasterxml.jackson.databind.node.ObjectNode node = objectMapper.createObjectNode();
+            node.put("a", tokens.accessToken());
+            node.put("r", tokens.refreshToken());
+            node.put("i", tokens.idToken());
+            node.put("e", tokens.expiresAtMs());
+            return credentialCrypto.encrypt(objectMapper.writeValueAsString(node));
+        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+            throw new IllegalStateException("Cannot serialize OIDC tokens", e);
+        }
+    }
+
+    private OidcTokens decryptTokens(byte[] enc) throws java.io.IOException {
+        com.fasterxml.jackson.databind.JsonNode node = objectMapper.readTree(credentialCrypto.decrypt(enc));
+        return new OidcTokens(
+                node.path("a").asText(null),
+                node.hasNonNull("r") ? node.get("r").asText() : null,
+                node.hasNonNull("i") ? node.get("i").asText() : null,
+                node.path("e").asLong(0));
+    }
+
+    private static String newSessionId() {
+        byte[] buf = new byte[32];
+        new java.security.SecureRandom().nextBytes(buf);
+        return java.util.HexFormat.of().formatHex(buf);
     }
 
     public void deleteSession(String sessionId) {

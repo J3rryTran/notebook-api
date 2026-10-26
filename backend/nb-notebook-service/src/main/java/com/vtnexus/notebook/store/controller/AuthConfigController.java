@@ -29,10 +29,7 @@ public class AuthConfigController {
 
         if ("oidc".equalsIgnoreCase(mode)) {
             resp.put("verified", authProperties.isEffectiveVerified());
-            resp.put("issuer", authProperties.getOidc().getIssuer());
-            resp.put("clientId", authProperties.getOidc().getClientId());
-            resp.put("scopes", authProperties.getOidc().getScopes());
-            resp.put("redirectPath", authProperties.getOidc().getRedirectPath());
+            resp.put("loginUrl", "/api/v1/auth/oidc/login");
         } else if ("no-oidc".equalsIgnoreCase(mode)) {
             resp.put("verified", authProperties.isEffectiveVerified());
         } else if ("ldap".equalsIgnoreCase(mode)) {

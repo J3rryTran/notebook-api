@@ -18,6 +18,8 @@ class ApplicationYamlStructureTest {
         assertThat(yml.getProperty("spring.datasource.password")).hasToString("${SPRING_DATASOURCE_PASSWORD:}");
         assertThat(yml.getProperty("spring.jpa.hibernate.ddl-auto")).isEqualTo("validate");
         assertThat(yml.containsProperty("logging.flyway.enabled")).isFalse();
+        assertThat(yml.getProperty("notebook.auth.oidc.ui.client-secret")).hasToString("${NOTEBOOK_OIDC_UI_CLIENT_SECRET:}");
+        assertThat(yml.getProperty("notebook.encryption-key")).hasToString("${NOTEBOOK_AUTH_ENCRYPTION_KEY:}");
         assertThat(yml.getProperty("notebook.auth.ldap.bind-password")).hasToString("${NOTEBOOK_LDAP_BIND_PASSWORD:}");
     }
 }

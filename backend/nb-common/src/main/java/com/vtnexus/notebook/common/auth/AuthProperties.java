@@ -16,8 +16,6 @@ import java.util.List;
 public class AuthProperties {
 
     private String mode;
-    private String usernameClaim = "preferred_username";
-    private Duration cacheTtl = Duration.ofSeconds(60);
     private Duration sessionTtl = Duration.ofHours(8);
     private Duration recheck = Duration.ofMinutes(10);
     private boolean allowUnverified = false;
@@ -36,12 +34,36 @@ public class AuthProperties {
     @Getter
     @Setter
     public static class OidcProperties {
-        private String issuer = "";
-        private String clientId = "kyuubi-notebook";
-        private List<String> scopes = new ArrayList<>(List.of("openid", "profile"));
-        private String redirectPath = "/auth/callback";
+        private Jwt jwt = new Jwt();
+        private Ui ui = new Ui();
+        private String authorizationEndpoint = "";
+        private String tokenEndpoint = "";
+        private String endSessionEndpoint = "";
+        private String redirectUri = "";
+        private Duration sessionTimeout = Duration.ofHours(4);
         private String serviceClientId = "notebook-api";
         private String serviceClientSecret = "";
+    }
+
+    @Getter
+    @Setter
+    public static class Jwt {
+        private String issuer = "";
+        private List<String> audience = new ArrayList<>();
+        private String jwksUrl = "";
+        private String usernameClaim = "preferred_username";
+        private List<String> allowedAlgorithms = new ArrayList<>(List.of("RS256"));
+        private Duration clockSkew = Duration.ofSeconds(30);
+        private Duration connectTimeout = Duration.ofSeconds(5);
+        private Duration readTimeout = Duration.ofSeconds(5);
+    }
+
+    @Getter
+    @Setter
+    public static class Ui {
+        private String clientId = "kyuubi-notebook";
+        private String clientSecret = "";
+        private String scope = "openid profile email";
     }
 
     @Getter

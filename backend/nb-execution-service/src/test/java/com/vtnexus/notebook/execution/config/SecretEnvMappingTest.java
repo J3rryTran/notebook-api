@@ -20,6 +20,8 @@ class SecretEnvMappingTest {
                 .hasToString("${NOTEBOOK_LDAP_BIND_PASSWORD:}");
         assertThat(yml.getProperty("notebook.auth.ldap.service-account.password"))
                 .hasToString("${NOTEBOOK_LDAP_SERVICE_ACCOUNT_PASSWORD:}");
+        assertThat(yml.getProperty("notebook.auth.oidc.ui.client-secret")).hasToString("${NOTEBOOK_OIDC_UI_CLIENT_SECRET:}");
+        assertThat(yml.getProperty("notebook.encryption-key")).hasToString("${NOTEBOOK_AUTH_ENCRYPTION_KEY:}");
         assertThat(yml.getProperty("spring.datasource.password")).hasToString("${SPRING_DATASOURCE_PASSWORD:}");
         assertThat(yml.getProperty("spring.flyway.enabled")).isEqualTo(false);
         assertThat(yml.containsProperty("logging.datasource.password")).isFalse();

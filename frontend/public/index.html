@@ -818,10 +818,11 @@
     </div>
   </div>
 
-  <!-- Login Modal (cho chế độ no-oidc và ldap) -->
+  <!-- Login Modal -->
   <div class="modal-backdrop" id="loginModal" style="display:none;">
     <div class="modal-box">
       <h3 id="loginTitle"><i class="fa-solid fa-lock" style="color: var(--primary);"></i> Đăng nhập Lakehouse</h3>
+      <div id="loginForm">
       <div class="form-group">
         <label for="usernameInput">Tên người dùng</label>
         <input type="text" id="usernameInput" placeholder="username" autocomplete="username">
@@ -831,15 +832,16 @@
         <input type="password" id="passwordInput" placeholder="password" autocomplete="current-password"
                onkeydown="if(event.key==='Enter') submitLogin();">
       </div>
+      </div>
       <div class="error-msg" id="loginError">Đăng nhập thất bại. Vui lòng kiểm tra lại.</div>
       <div style="margin-top: 16px; display: flex; justify-content: flex-end;">
-        <button class="btn btn-primary" onclick="submitLogin()"><i class="fa-solid fa-right-to-bracket"></i> Đăng nhập</button>
+        <button class="btn btn-primary" id="oidcRetryBtn" style="display:none;" onclick="redirectToOidcLogin()"><i class="fa-solid fa-right-to-bracket"></i> Đăng nhập lại</button>
+        <button class="btn btn-primary" onclick="submitLogin()" id="passwordLoginBtn"><i class="fa-solid fa-right-to-bracket"></i> Đăng nhập</button>
       </div>
     </div>
   </div>
 
   <!-- Script Modules (100% self-hosted, offline) -->
-  <script src="vendor/oidc-client-ts.min.js"></script>
   <script src="app/api.js"></script>
   <script src="app/render.js"></script>
   <script src="app/notebook.js"></script>

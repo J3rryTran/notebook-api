@@ -49,15 +49,28 @@ notebook:
   admins: []
   auth:
     mode: oidc
-    username-claim: preferred_username
-    cache-ttl: 60s
     session-ttl: 8h
     recheck: 10m
     allow-unverified: false
     oidc:
-      issuer: ""
-      client-id: kyuubi-notebook
-      scopes: [openid, profile]
+      jwt:
+        issuer: ""
+        audience: []
+        jwks-url: ""
+        username-claim: preferred_username
+        allowed-algorithms: [RS256]
+        clock-skew: 30s
+        connect-timeout: 5s
+        read-timeout: 5s
+      ui:
+        client-id: kyuubi-notebook
+        client-secret: ${NOTEBOOK_OIDC_UI_CLIENT_SECRET:}
+        scope: "openid profile email"
+      authorization-endpoint: ""
+      token-endpoint: ""
+      end-session-endpoint: ""
+      redirect-uri: ""
+      session-timeout: PT4H
       service-client-id: notebook-api
       service-client-secret: ${NOTEBOOK_OIDC_CLIENT_SECRET:}
     ldap:

@@ -19,16 +19,34 @@ public final class CsrfSupport {
     }
 
     public static void apply(HttpSecurity http, AuthMode mode) throws Exception {
-        if (mode == AuthMode.OIDC) {
-            http.csrf(csrf -> csrf.disable());
-            return;
-        }
         http.csrf(csrf -> csrf
                 .csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
                 .csrfTokenRequestHandler(new CsrfTokenRequestAttributeHandler())
                 .sessionAuthenticationStrategy(new org.springframework.security.web.authentication.session.NullAuthenticatedSessionStrategy())
-                .ignoringRequestMatchers("/internal/**"));
+                .ignoringRequestMatchers("/internal/**")
+                .ignoringRequestMatchers(CsrfSupport::isBearerRequest));
         http.addFilterAfter(new CsrfCookieFilter(), CsrfFilter.class);
+    }
+
+    private static boolean isBearerRequest(HttpServletRequest request) {
+        if (hasSessionCookie(request)) {
+            return false;
+        }
+        String auth = request.getHeader("Authorization");
+        return auth != null && auth.startsWith("Bearer ");
+    }
+
+    private static boolean hasSessionCookie(HttpServletRequest request) {
+        jakarta.servlet.http.Cookie[] cookies = request.getCookies();
+        if (cookies == null) {
+            return false;
+        }
+        for (jakarta.servlet.http.Cookie c : cookies) {
+            if (SessionCookieFilter.COOKIE_NAME.equals(c.getName())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static class CsrfCookieFilter extends OncePerRequestFilter {

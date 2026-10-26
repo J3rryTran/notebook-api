@@ -125,13 +125,86 @@
         "oidc": {
           "type": "object",
           "properties": {
-            "cacheTtl": {
-              "type": "string",
-              "pattern": "^[0-9]+(ms|s|m|h|d)$"
+            "jwt": {
+              "type": "object",
+              "properties": {
+                "issuer": {
+                  "type": "string"
+                },
+                "audience": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "jwksUrl": {
+                  "type": "string"
+                },
+                "usernameClaim": {
+                  "type": "string"
+                },
+                "allowedAlgorithms": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "enum": [
+                      "RS256",
+                      "RS384",
+                      "RS512",
+                      "ES256",
+                      "ES384",
+                      "ES512",
+                      "PS256",
+                      "PS384",
+                      "PS512"
+                    ]
+                  }
+                }
+              }
             },
-            "redirectPath": {
+            "ui": {
+              "type": "object",
+              "properties": {
+                "clientId": {
+                  "type": "string"
+                },
+                "clientSecret": {
+                  "type": "string"
+                },
+                "scope": {
+                  "type": "string"
+                }
+              }
+            },
+            "authorizationEndpoint": {
+              "type": "string"
+            },
+            "tokenEndpoint": {
+              "type": "string"
+            },
+            "endSessionEndpoint": {
+              "type": "string"
+            },
+            "redirectUri": {
+              "type": "string"
+            },
+            "sessionTimeout": {
               "type": "string",
-              "pattern": "^/"
+              "pattern": "^(P.+|[0-9]+(ms|s|m|h|d))$"
+            },
+            "serviceAccount": {
+              "type": "object",
+              "properties": {
+                "enabled": {
+                  "type": "boolean"
+                },
+                "clientId": {
+                  "type": "string"
+                },
+                "clientSecret": {
+                  "type": "string"
+                }
+              }
             }
           }
         },

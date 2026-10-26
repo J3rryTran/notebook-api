@@ -41,6 +41,13 @@ class MariaDbMigrationIT {
         System.setProperty("notebook.auth.mode", "oidc");
         System.setProperty("notebook.internalToken", "secret-token-it");
         System.setProperty("notebook.internal-token", "secret-token-it");
+        System.setProperty("notebook.encryption-key", "MTIzNDU2Nzg5MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTI=");
+        System.setProperty("notebook.auth.oidc.jwt.issuer", "https://keycloak.it.invalid/realms/it");
+        System.setProperty("notebook.auth.oidc.jwt.audience", "kyuubi");
+        System.setProperty("notebook.auth.oidc.jwt.jwks-url", "http://keycloak.it.invalid/certs");
+        System.setProperty("notebook.auth.oidc.ui.client-secret", "it-secret");
+        System.setProperty("notebook.auth.oidc.authorization-endpoint", "https://keycloak.it.invalid/auth");
+        System.setProperty("notebook.auth.oidc.token-endpoint", "http://keycloak.it.invalid/token");
     }
 
     @DynamicPropertySource

@@ -31,7 +31,20 @@ public class AuthPropertiesValidator implements EnvironmentPostProcessor, Ordere
             throw new IllegalStateException("notebook.auth.mode must be one of oidc, no-oidc, ldap");
         }
 
-        if (mode == AuthMode.NO_OIDC) {
+        String internalToken = null;
+        try {
+            internalToken = env.getProperty("notebook.internalToken");
+            if (internalToken == null || internalToken.isBlank()) {
+                internalToken = env.getProperty("notebook.internal-token");
+            }
+        } catch (IllegalArgumentException e) {
+            throw new IllegalStateException("NOTEBOOK_INTERNAL_TOKEN is required", e);
+        }
+        if (internalToken == null || internalToken.isBlank()) {
+            throw new IllegalStateException("NOTEBOOK_INTERNAL_TOKEN is required");
+        }
+
+        if (mode == AuthMode.NO_OIDC || mode == AuthMode.OIDC) {
             String encKey = env.getProperty("notebook.encryption-key");
             if (encKey == null || encKey.isBlank()) {
                 encKey = env.getProperty("notebook.encryptionKey");
@@ -52,9 +65,25 @@ public class AuthPropertiesValidator implements EnvironmentPostProcessor, Ordere
         boolean isDev = env.acceptsProfiles(Profiles.of("dev"));
 
         if (mode == AuthMode.OIDC) {
-            String redirectPath = env.getProperty("notebook.auth.oidc.redirect-path", "/auth/callback");
-            if (!isValidRedirectPath(redirectPath)) {
-                throw new IllegalStateException("notebook.auth.oidc.redirect-path must start with / and not be under /api/, /internal/ or /actuator/");
+            String p = "notebook.auth.oidc.";
+            requireNonBlank(env, p + "jwt.issuer");
+            requireNonBlank(env, p + "jwt.jwks-url");
+            requireNonBlank(env, p + "ui.client-id");
+            requireNonBlank(env, p + "ui.client-secret");
+            requireNonBlank(env, p + "authorization-endpoint");
+            requireNonBlank(env, p + "token-endpoint");
+            if (env.getProperty(p + "jwt.audience[0]", env.getProperty(p + "jwt.audience", "")).isBlank()) {
+                throw new IllegalStateException(p + "jwt.audience is required for mode=oidc");
+            }
+            for (String key : new String[]{"jwt.jwks-url", "authorization-endpoint", "token-endpoint", "end-session-endpoint"}) {
+                String v = env.getProperty(p + key, "");
+                if (!v.isBlank() && !isHttpUrl(v)) {
+                    throw new IllegalStateException(p + key + " must be an http(s) URL");
+                }
+            }
+            String redirectUri = env.getProperty(p + "redirect-uri", "");
+            if (!redirectUri.isBlank() && !isValidRedirectUri(redirectUri)) {
+                throw new IllegalStateException(p + "redirect-uri must be an http(s) URL ending with " + OIDC_CALLBACK_PATH);
             }
         }
 
@@ -90,19 +119,6 @@ public class AuthPropertiesValidator implements EnvironmentPostProcessor, Ordere
             }
         }
 
-        String internalToken = null;
-        try {
-            internalToken = env.getProperty("notebook.internalToken");
-            if (internalToken == null || internalToken.isBlank()) {
-                internalToken = env.getProperty("notebook.internal-token");
-            }
-        } catch (IllegalArgumentException e) {
-            throw new IllegalStateException("NOTEBOOK_INTERNAL_TOKEN is required", e);
-        }
-        if (internalToken == null || internalToken.isBlank()) {
-            throw new IllegalStateException("NOTEBOOK_INTERNAL_TOKEN is required");
-        }
-
         String outputMode = env.getProperty("kyuubi.session-configs.kyuubi.engine.spark.output.mode");
         if (outputMode == null) {
             outputMode = env.getProperty("kyuubi.sessionConfigs.kyuubi.engine.spark.output.mode");
@@ -112,10 +128,30 @@ public class AuthPropertiesValidator implements EnvironmentPostProcessor, Ordere
         }
     }
 
-    static boolean isValidRedirectPath(String path) {
-        if (path == null || !path.startsWith("/") || path.startsWith("//") || path.contains("://")) {
+    public static final String OIDC_CALLBACK_PATH = "/api/v1/auth/callback";
+
+    private static void requireNonBlank(Environment env, String key) {
+        String v = env.getProperty(key);
+        if (v == null || v.isBlank()) {
+            throw new IllegalStateException(key + " is required for mode=oidc");
+        }
+    }
+
+    static boolean isHttpUrl(String value) {
+        try {
+            java.net.URI uri = java.net.URI.create(value.trim());
+            String scheme = uri.getScheme();
+            return ("http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme)) && uri.getHost() != null;
+        } catch (IllegalArgumentException e) {
             return false;
         }
-        return !(path.startsWith("/api/") || path.startsWith("/internal/") || path.startsWith("/actuator/"));
+    }
+
+    static boolean isValidRedirectUri(String value) {
+        if (!isHttpUrl(value)) {
+            return false;
+        }
+        java.net.URI uri = java.net.URI.create(value.trim());
+        return OIDC_CALLBACK_PATH.equals(uri.getPath()) && uri.getQuery() == null && uri.getFragment() == null;
     }
 }

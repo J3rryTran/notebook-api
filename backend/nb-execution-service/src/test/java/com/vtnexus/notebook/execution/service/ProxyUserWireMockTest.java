@@ -95,7 +95,7 @@ class ProxyUserWireMockTest {
         txTemplate = new TransactionTemplate(txManager);
 
         com.vtnexus.notebook.common.auth.AuthProperties saAuthProps = new com.vtnexus.notebook.common.auth.AuthProperties();
-        saAuthProps.getOidc().setIssuer(wireMockServer.baseUrl() + "/auth");
+        saAuthProps.getOidc().setTokenEndpoint(wireMockServer.baseUrl() + "/auth/protocol/openid-connect/token");
         saAuthProps.getOidc().setServiceClientId("notebook-api");
         saAuthProps.getOidc().setServiceClientSecret("my-sa-secret");
         serviceAccountTokenProvider = new ServiceAccountTokenProvider(
@@ -270,7 +270,7 @@ class ProxyUserWireMockTest {
     @Test
     void testMissingSecretThrows503ProxyUnavailable() {
         com.vtnexus.notebook.common.auth.AuthProperties saAuthProps = new com.vtnexus.notebook.common.auth.AuthProperties();
-        saAuthProps.getOidc().setIssuer(wireMockServer.baseUrl() + "/auth");
+        saAuthProps.getOidc().setTokenEndpoint(wireMockServer.baseUrl() + "/auth/protocol/openid-connect/token");
         saAuthProps.getOidc().setServiceClientId("notebook-api");
         saAuthProps.getOidc().setServiceClientSecret("");
         ServiceAccountTokenProvider noSecretProvider = new ServiceAccountTokenProvider(

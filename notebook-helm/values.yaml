@@ -42,6 +42,7 @@ secretKeys:
   dbPassword: db-password
   authEncryptionKey: auth-encryption-key
   oidcClientSecret: oidc-client-secret
+  oidcServiceClientSecret: oidc-service-client-secret
   ldapBindPassword: ldap-bindpw
   ldapServiceAccountPassword: ldap-service-account-password
   ldapTruststore: ldap-truststore
@@ -71,15 +72,25 @@ auth:
   allowUnverified: false
 
   oidc:
-    issuer: "https://10.29.19.56:32004/realms/lakehouse"
-    clientId: kyuubi-notebook
-    redirectPath: /auth/callback
-    scopes: [openid, profile]
-    usernameClaim: preferred_username
-    cacheTtl: 60s
+    jwt:
+      issuer: "https://10.29.19.56:32004/realms/lakehouse"
+      audience: [kyuubi]
+      jwksUrl: "http://keycloak-service.keycloak-prod.svc.cluster.local:8080/realms/lakehouse/protocol/openid-connect/certs"
+      usernameClaim: preferred_username
+      allowedAlgorithms: [RS256]
+    ui:
+      clientId: kyuubi-notebook
+      clientSecret: ""
+      scope: "openid profile email"
+    authorizationEndpoint: "https://10.29.19.56:32004/realms/lakehouse/protocol/openid-connect/auth"
+    endSessionEndpoint: "https://10.29.19.56:32004/realms/lakehouse/protocol/openid-connect/logout"
+    tokenEndpoint: "http://keycloak-service.keycloak-prod.svc.cluster.local:8080/realms/lakehouse/protocol/openid-connect/token"
+    redirectUri: "http://10.29.19.56:32380/api/v1/auth/callback"
+    sessionTimeout: PT4H
     serviceAccount:
       enabled: false
       clientId: notebook-api
+      clientSecret: ""
 
   ldap:
     url: "ldaps://freeipa.lab.com:636"

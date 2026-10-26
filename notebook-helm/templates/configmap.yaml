@@ -26,13 +26,21 @@ data:
         mode: {{ .Values.auth.mode }}
         allow-unverified: {{ .Values.auth.allowUnverified }}
         {{- if eq .Values.auth.mode "oidc" }}
-        username-claim: {{ .Values.auth.oidc.usernameClaim | quote }}
-        cache-ttl: {{ .Values.auth.oidc.cacheTtl }}
         oidc:
-          issuer: {{ .Values.auth.oidc.issuer | quote }}
-          client-id: {{ .Values.auth.oidc.clientId | quote }}
-          redirect-path: {{ .Values.auth.oidc.redirectPath | default "/auth/callback" | quote }}
-          scopes: {{ toJson .Values.auth.oidc.scopes }}
+          jwt:
+            issuer: {{ .Values.auth.oidc.jwt.issuer | quote }}
+            audience: {{ .Values.auth.oidc.jwt.audience | default (list) | toJson }}
+            jwks-url: {{ .Values.auth.oidc.jwt.jwksUrl | quote }}
+            username-claim: {{ .Values.auth.oidc.jwt.usernameClaim | default "preferred_username" | quote }}
+            allowed-algorithms: {{ .Values.auth.oidc.jwt.allowedAlgorithms | default (list "RS256") | toJson }}
+          ui:
+            client-id: {{ .Values.auth.oidc.ui.clientId | quote }}
+            scope: {{ .Values.auth.oidc.ui.scope | default "openid profile email" | quote }}
+          authorization-endpoint: {{ .Values.auth.oidc.authorizationEndpoint | quote }}
+          token-endpoint: {{ .Values.auth.oidc.tokenEndpoint | quote }}
+          end-session-endpoint: {{ .Values.auth.oidc.endSessionEndpoint | default "" | quote }}
+          redirect-uri: {{ .Values.auth.oidc.redirectUri | default "" | quote }}
+          session-timeout: {{ .Values.auth.oidc.sessionTimeout | default "PT4H" | quote }}
           {{- if .Values.auth.oidc.serviceAccount.enabled }}
           service-client-id: {{ .Values.auth.oidc.serviceAccount.clientId | quote }}
           {{- end }}

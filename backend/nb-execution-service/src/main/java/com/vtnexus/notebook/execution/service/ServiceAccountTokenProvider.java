@@ -20,7 +20,7 @@ public class ServiceAccountTokenProvider {
     private static final Logger log = LoggerFactory.getLogger(ServiceAccountTokenProvider.class);
 
     private final RestTemplate restTemplate;
-    private final String issuer;
+    private final String tokenEndpoint;
     private final String clientId;
     private final String clientSecret;
 
@@ -30,8 +30,8 @@ public class ServiceAccountTokenProvider {
     public ServiceAccountTokenProvider(
             com.vtnexus.notebook.common.auth.AuthProperties authProperties,
             RestTemplateBuilder builder) {
-        String iss = authProperties.getOidc().getIssuer();
-        this.issuer = (iss != null && iss.endsWith("/")) ? iss.substring(0, iss.length() - 1) : (iss != null ? iss : "");
+        String te = authProperties.getOidc().getTokenEndpoint();
+        this.tokenEndpoint = te != null ? te.trim() : "";
         this.clientId = authProperties.getOidc().getServiceClientId();
         this.clientSecret = authProperties.getOidc().getServiceClientSecret();
         this.restTemplate = builder
@@ -50,7 +50,7 @@ public class ServiceAccountTokenProvider {
             return cachedToken;
         }
 
-        String tokenUrl = issuer + "/protocol/openid-connect/token";
+        String tokenUrl = tokenEndpoint;
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
 

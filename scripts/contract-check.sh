@@ -11,7 +11,12 @@ NC='\033[0m'
 
 ENV_SETS=(--set mariadb.host=mariadb.build-check.invalid
           --set kyuubi.restUrl=http://kyuubi.build-check.invalid:10099
-          --set auth.oidc.issuer=https://keycloak.build-check.invalid/realms/check
+          --set auth.oidc.jwt.issuer=https://keycloak.build-check.invalid/realms/check
+          --set auth.oidc.jwt.jwksUrl=http://keycloak.build-check.invalid/certs
+          --set auth.oidc.authorizationEndpoint=https://keycloak.build-check.invalid/auth
+          --set auth.oidc.tokenEndpoint=http://keycloak.build-check.invalid/token
+          --set auth.oidc.endSessionEndpoint=https://keycloak.build-check.invalid/logout
+          --set auth.oidc.redirectUri=http://notebook.build-check.invalid/api/v1/auth/callback
           --set auth.ldap.url=ldaps://ldap.build-check.invalid:636
           --set service.nodePort=null)
 
@@ -39,12 +44,18 @@ EXPECTED_CONFIG_KEYS=(
   "notebook.admins"
   "notebook.auth.mode"
   "notebook.auth.allow-unverified"
-  "notebook.auth.username-claim"
-  "notebook.auth.cache-ttl"
-  "notebook.auth.oidc.issuer"
-  "notebook.auth.oidc.client-id"
-  "notebook.auth.oidc.redirect-path"
-  "notebook.auth.oidc.scopes"
+  "notebook.auth.oidc.jwt.issuer"
+  "notebook.auth.oidc.jwt.audience"
+  "notebook.auth.oidc.jwt.jwks-url"
+  "notebook.auth.oidc.jwt.username-claim"
+  "notebook.auth.oidc.jwt.allowed-algorithms"
+  "notebook.auth.oidc.ui.client-id"
+  "notebook.auth.oidc.ui.scope"
+  "notebook.auth.oidc.authorization-endpoint"
+  "notebook.auth.oidc.token-endpoint"
+  "notebook.auth.oidc.end-session-endpoint"
+  "notebook.auth.oidc.redirect-uri"
+  "notebook.auth.oidc.session-timeout"
   "notebook.auth.oidc.service-client-id"
   "notebook.auth.session-ttl"
   "notebook.auth.recheck"

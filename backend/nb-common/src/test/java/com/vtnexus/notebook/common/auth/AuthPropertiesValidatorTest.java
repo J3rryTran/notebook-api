@@ -14,6 +14,22 @@ class AuthPropertiesValidatorTest {
         return Base64.getEncoder().encodeToString(new byte[32]);
     }
 
+    private MockEnvironment validOidcEnv() {
+        MockEnvironment env = new MockEnvironment();
+        env.setProperty("notebook.auth.mode", "oidc");
+        env.setProperty("notebook.internalToken", "secret-token-123");
+        env.setProperty("notebook.encryptionKey", validKey());
+        env.setProperty("notebook.auth.oidc.jwt.issuer", "https://10.29.19.56:32004/realms/lakehouse");
+        env.setProperty("notebook.auth.oidc.jwt.audience[0]", "kyuubi");
+        env.setProperty("notebook.auth.oidc.jwt.jwks-url", "http://keycloak:8080/realms/lakehouse/protocol/openid-connect/certs");
+        env.setProperty("notebook.auth.oidc.ui.client-id", "kyuubi-notebook");
+        env.setProperty("notebook.auth.oidc.ui.client-secret", "s3cret");
+        env.setProperty("notebook.auth.oidc.authorization-endpoint", "https://10.29.19.56:32004/realms/lakehouse/protocol/openid-connect/auth");
+        env.setProperty("notebook.auth.oidc.token-endpoint", "http://keycloak:8080/realms/lakehouse/protocol/openid-connect/token");
+        env.setProperty("notebook.auth.oidc.redirect-uri", "http://10.29.19.56:32380/api/v1/auth/callback");
+        return env;
+    }
+
     @Test
     @DisplayName("T5.1: mode không hợp lệ")
     void testInvalidMode() {
@@ -107,8 +123,8 @@ class AuthPropertiesValidatorTest {
     @Test
     @DisplayName("T5.8: thiếu internalToken")
     void testMissingInternalToken() {
-        MockEnvironment env = new MockEnvironment();
-        env.setProperty("notebook.auth.mode", "oidc");
+        MockEnvironment env = validOidcEnv();
+        env.setProperty("notebook.internalToken", "");
 
         IllegalStateException ex = assertThrows(IllegalStateException.class, () -> AuthPropertiesValidator.validate(env));
         assertEquals("NOTEBOOK_INTERNAL_TOKEN is required", ex.getMessage());
@@ -117,9 +133,7 @@ class AuthPropertiesValidatorTest {
     @Test
     @DisplayName("T5.9: cấm kyuubi.engine.spark.output.mode")
     void testForbiddenOutputMode() {
-        MockEnvironment env = new MockEnvironment();
-        env.setProperty("notebook.auth.mode", "oidc");
-        env.setProperty("notebook.internalToken", "secret");
+        MockEnvironment env = validOidcEnv();
         env.setProperty("kyuubi.session-configs.kyuubi.engine.spark.output.mode", "NOTEBOOK");
 
         IllegalStateException ex = assertThrows(IllegalStateException.class, () -> AuthPropertiesValidator.validate(env));
@@ -129,22 +143,55 @@ class AuthPropertiesValidatorTest {
     @Test
     @DisplayName("Cấu hình OIDC hợp lệ")
     void testValidOidcConfig() {
-        MockEnvironment env = new MockEnvironment();
-        env.setProperty("notebook.auth.mode", "oidc");
-        env.setProperty("notebook.internalToken", "secret-token-123");
+        assertDoesNotThrow(() -> AuthPropertiesValidator.validate(validOidcEnv()));
+    }
 
+    @Test
+    void oidcRequiresEachEndpointAndSecret() {
+        for (String key : new String[]{"jwt.issuer", "jwt.jwks-url", "ui.client-id", "ui.client-secret", "authorization-endpoint", "token-endpoint"}) {
+            MockEnvironment env = validOidcEnv();
+            env.setProperty("notebook.auth.oidc." + key, "");
+            IllegalStateException ex = assertThrows(IllegalStateException.class, () -> AuthPropertiesValidator.validate(env));
+            assertEquals("notebook.auth.oidc." + key + " is required for mode=oidc", ex.getMessage());
+        }
+    }
+
+    @Test
+    void oidcRequiresAudienceAndEncryptionKey() {
+        MockEnvironment env = validOidcEnv();
+        env.setProperty("notebook.auth.oidc.jwt.audience[0]", "");
+        assertEquals("notebook.auth.oidc.jwt.audience is required for mode=oidc",
+                assertThrows(IllegalStateException.class, () -> AuthPropertiesValidator.validate(env)).getMessage());
+
+        MockEnvironment env2 = validOidcEnv();
+        env2.setProperty("notebook.encryptionKey", "");
+        assertEquals("notebook.encryptionKey must be 32 bytes base64",
+                assertThrows(IllegalStateException.class, () -> AuthPropertiesValidator.validate(env2)).getMessage());
+    }
+
+    @Test
+    void oidcRedirectUriMustTargetCallbackPath() {
+        assertTrue(AuthPropertiesValidator.isValidRedirectUri("http://10.29.19.56:32380/api/v1/auth/callback"));
+        assertTrue(AuthPropertiesValidator.isValidRedirectUri("https://notebook.lab.com/api/v1/auth/callback"));
+        assertFalse(AuthPropertiesValidator.isValidRedirectUri("http://10.29.19.56:32379/api/v1/authentication/callback"));
+        assertFalse(AuthPropertiesValidator.isValidRedirectUri("/api/v1/auth/callback"));
+        assertFalse(AuthPropertiesValidator.isValidRedirectUri("javascript:alert(1)"));
+        assertFalse(AuthPropertiesValidator.isValidRedirectUri("http://x/api/v1/auth/callback?next=/"));
+
+        MockEnvironment env = validOidcEnv();
+        env.setProperty("notebook.auth.oidc.redirect-uri", "http://10.29.19.56:32379/api/v1/authentication/callback");
+        assertThrows(IllegalStateException.class, () -> AuthPropertiesValidator.validate(env));
+
+        env.setProperty("notebook.auth.oidc.redirect-uri", "");
         assertDoesNotThrow(() -> AuthPropertiesValidator.validate(env));
     }
 
-    @org.junit.jupiter.api.Test
-    void oidcRedirectPathMustBeLocalNonApiPath() {
-        assertTrue(AuthPropertiesValidator.isValidRedirectPath("/auth/callback"));
-        assertTrue(AuthPropertiesValidator.isValidRedirectPath("/notebook/oidc-callback"));
-        org.junit.jupiter.api.Assertions.assertFalse(AuthPropertiesValidator.isValidRedirectPath("auth/callback"));
-        org.junit.jupiter.api.Assertions.assertFalse(AuthPropertiesValidator.isValidRedirectPath("//evil.example/cb"));
-        org.junit.jupiter.api.Assertions.assertFalse(AuthPropertiesValidator.isValidRedirectPath("https://evil.example/cb"));
-        org.junit.jupiter.api.Assertions.assertFalse(AuthPropertiesValidator.isValidRedirectPath("/api/v1/cb"));
-        org.junit.jupiter.api.Assertions.assertFalse(AuthPropertiesValidator.isValidRedirectPath("/internal/cb"));
+    @Test
+    void oidcEndpointsMustBeHttpUrls() {
+        MockEnvironment env = validOidcEnv();
+        env.setProperty("notebook.auth.oidc.token-endpoint", "keycloak:8080/token");
+        assertEquals("notebook.auth.oidc.token-endpoint must be an http(s) URL",
+                assertThrows(IllegalStateException.class, () -> AuthPropertiesValidator.validate(env)).getMessage());
     }
 
     @Test

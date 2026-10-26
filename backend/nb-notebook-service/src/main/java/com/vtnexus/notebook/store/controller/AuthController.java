@@ -34,16 +34,19 @@ public class AuthController {
     private final String kyuubiRestUrl;
     private final HttpClient httpClient;
     private final org.springframework.core.env.Environment environment;
+    private final com.vtnexus.notebook.store.service.OidcLoginService oidcLoginService;
 
     public AuthController(
             AuthProperties authProperties,
             AuthSessionService sessionService,
+            com.vtnexus.notebook.store.service.OidcLoginService oidcLoginService,
             LdapAuthenticator ldapAuthenticator,
             com.vtnexus.notebook.common.config.KyuubiProperties kyuubiProperties,
             com.vtnexus.notebook.common.config.NotebookProperties notebookProperties,
             org.springframework.core.env.Environment environment) {
         this.authProperties = authProperties;
         this.sessionService = sessionService;
+        this.oidcLoginService = oidcLoginService;
         this.ldapAuthenticator = ldapAuthenticator;
         this.notebookProperties = notebookProperties;
         this.kyuubiRestUrl = kyuubiProperties.getRestUrl().replaceAll("/+$", "");
@@ -65,7 +68,7 @@ public class AuthController {
         org.springframework.http.ResponseCookie cookie = org.springframework.http.ResponseCookie.from(SessionCookieFilter.COOKIE_NAME, sessionId)
                 .httpOnly(true)
                 .secure(isSecureCookie(request))
-                .sameSite("Strict")
+                .sameSite(AuthMode.fromString(authProperties.getMode()) == AuthMode.OIDC ? "Lax" : "Strict")
                 .path("/")
                 .maxAge(maxAge)
                 .build();
@@ -135,26 +138,82 @@ public class AuthController {
         ));
     }
 
+    @GetMapping("/oidc/login")
+    public ResponseEntity<Void> oidcLogin(
+            @RequestParam(value = "redirect", required = false) String redirect,
+            HttpServletRequest request) {
+        requireOidc();
+        String location = oidcLoginService.buildAuthorizationRedirect(request, redirect);
+        return ResponseEntity.status(HttpStatus.FOUND)
+                .header(org.springframework.http.HttpHeaders.LOCATION, location)
+                .header(org.springframework.http.HttpHeaders.CACHE_CONTROL, "no-store")
+                .build();
+    }
+
+    @GetMapping("/callback")
+    public ResponseEntity<Void> oidcCallback(
+            @RequestParam(value = "code", required = false) String code,
+            @RequestParam(value = "state", required = false) String state,
+            @RequestParam(value = "error", required = false) String error,
+            HttpServletRequest request,
+            HttpServletResponse response) {
+        requireOidc();
+        String target;
+        if (error != null && !error.isBlank()) {
+            target = "/?authError=" + java.net.URLEncoder.encode(error, StandardCharsets.UTF_8);
+        } else {
+            try {
+                com.vtnexus.notebook.store.service.OidcLoginService.LoginResult result = oidcLoginService.completeLogin(code, state);
+                addSessionCookie(request, response, result.session().getId(), authProperties.getOidc().getSessionTimeout());
+                target = result.redirectPath();
+            } catch (NotebookApiException ex) {
+                org.slf4j.LoggerFactory.getLogger(AuthController.class).warn("OIDC callback failed: {}", ex.getMessage());
+                target = "/?authError=" + java.net.URLEncoder.encode(ex.getCode().toLowerCase(), StandardCharsets.UTF_8);
+            }
+        }
+        return ResponseEntity.status(HttpStatus.FOUND)
+                .header(org.springframework.http.HttpHeaders.LOCATION, target)
+                .header(org.springframework.http.HttpHeaders.CACHE_CONTROL, "no-store")
+                .build();
+    }
+
+    private void requireOidc() {
+        if (AuthMode.fromString(authProperties.getMode()) != AuthMode.OIDC) {
+            throw new NotebookApiException("NOT_FOUND", "OIDC login is not enabled", HttpStatus.NOT_FOUND);
+        }
+    }
+
     @PostMapping("/logout")
     public ResponseEntity<Map<String, Object>> logout(
             HttpServletRequest request,
             HttpServletResponse response) {
 
         AuthMode mode = AuthMode.fromString(authProperties.getMode());
-        if (mode == AuthMode.OIDC) {
-            throw new NotebookApiException("METHOD_NOT_ALLOWED", "Logout endpoint is disabled in OIDC mode", HttpStatus.METHOD_NOT_ALLOWED);
-        }
-
+        String sessionId = null;
         Cookie[] cookies = request.getCookies();
         if (cookies != null) {
             for (Cookie c : cookies) {
                 if (SessionCookieFilter.COOKIE_NAME.equals(c.getName())) {
-                    sessionService.deleteSession(c.getValue());
-                    addSessionCookie(request, response, "", Duration.ZERO);
+                    sessionId = c.getValue();
                     break;
                 }
             }
         }
-        return ResponseEntity.ok(Map.of("message", "Logout successful"));
+
+        java.util.Optional<String> idToken = mode == AuthMode.OIDC
+                ? sessionService.oidcIdToken(sessionId)
+                : java.util.Optional.empty();
+        if (sessionId != null) {
+            sessionService.deleteSession(sessionId);
+            addSessionCookie(request, response, "", Duration.ZERO);
+        }
+
+        Map<String, Object> body = new java.util.HashMap<>();
+        body.put("message", "Logout successful");
+        if (mode == AuthMode.OIDC) {
+            oidcLoginService.endSessionUrl(idToken, oidcLoginService.postLogoutRedirect(request))
+                    .ifPresent(url -> body.put("endSessionUrl", url));
+        }
+        return ResponseEntity.ok(body);
     }
 }

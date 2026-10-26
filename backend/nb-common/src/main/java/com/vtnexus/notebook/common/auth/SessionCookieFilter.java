@@ -29,10 +29,16 @@ public class SessionCookieFilter extends OncePerRequestFilter {
 
     private final SessionResolver sessionResolver;
     private final ObjectMapper objectMapper;
+    private final OidcTokenVerifiers bearerVerifier;
 
     public SessionCookieFilter(SessionResolver sessionResolver, ObjectMapper objectMapper) {
+        this(sessionResolver, objectMapper, null);
+    }
+
+    public SessionCookieFilter(SessionResolver sessionResolver, ObjectMapper objectMapper, OidcTokenVerifiers bearerVerifier) {
         this.sessionResolver = sessionResolver;
         this.objectMapper = objectMapper;
+        this.bearerVerifier = bearerVerifier;
     }
 
     @Override
@@ -43,6 +49,19 @@ public class SessionCookieFilter extends OncePerRequestFilter {
 
         if (isPublicOrInternal(path)) {
             filterChain.doFilter(request, response);
+            return;
+        }
+
+        String authHeader = request.getHeader(org.springframework.http.HttpHeaders.AUTHORIZATION);
+        if (bearerVerifier != null && authHeader != null && authHeader.startsWith("Bearer ")) {
+            String username;
+            try {
+                username = bearerVerifier.authenticateBearer(authHeader);
+            } catch (NotebookApiException ex) {
+                writeError(response, ex.getStatus(), ex.getCode(), ex.getMessage());
+                return;
+            }
+            authenticateAndContinue(request, response, filterChain, new SessionInfo(username, authHeader, false));
             return;
         }
 
@@ -69,6 +88,11 @@ public class SessionCookieFilter extends OncePerRequestFilter {
             return;
         }
 
+        authenticateAndContinue(request, response, filterChain, info);
+    }
+
+    private void authenticateAndContinue(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain, SessionInfo info)
+            throws ServletException, IOException {
         List<SimpleGrantedAuthority> authorities = new ArrayList<>();
         authorities.add(new SimpleGrantedAuthority("ROLE_USER"));
         if (info.isAdmin()) {
@@ -95,6 +119,8 @@ public class SessionCookieFilter extends OncePerRequestFilter {
                 || path.startsWith("/internal")
                 || path.equals("/api/v1/auth/config")
                 || path.equals("/api/v1/auth/login")
+                || path.equals("/api/v1/auth/oidc/login")
+                || path.equals("/api/v1/auth/callback")
                 || path.equals("/error");
     }
 

@@ -18,19 +18,19 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 public class SecurityConfig {
 
     private final AuthProperties authProperties;
-    private final BearerDelegationAuthenticator bearerAuthenticator;
+    private final OidcTokenVerifiers oidcTokenVerifiers;
     private final AuthSessionService sessionService;
     private final ObjectMapper objectMapper;
     private final String internalToken;
 
     public SecurityConfig(
             AuthProperties authProperties,
-            BearerDelegationAuthenticator bearerAuthenticator,
+            OidcTokenVerifiers oidcTokenVerifiers,
             AuthSessionService sessionService,
             ObjectMapper objectMapper,
             com.vtnexus.notebook.common.config.NotebookProperties notebookProperties) {
         this.authProperties = authProperties;
-        this.bearerAuthenticator = bearerAuthenticator;
+        this.oidcTokenVerifiers = oidcTokenVerifiers;
         this.sessionService = sessionService;
         this.objectMapper = objectMapper;
         this.internalToken = notebookProperties.getInternalToken();
@@ -44,10 +44,8 @@ public class SecurityConfig {
             throw new IllegalStateException("Unsupported or missing auth mode: " + authProperties.getMode());
         }
 
-        Filter authFilter = switch (mode) {
-            case NO_OIDC, LDAP -> new SessionCookieFilter(sessionService::resolveSession, objectMapper);
-            case OIDC -> new BearerFilter(bearerAuthenticator, objectMapper);
-        };
+        Filter authFilter = new SessionCookieFilter(sessionService::resolveSession, objectMapper,
+                mode == AuthMode.OIDC ? oidcTokenVerifiers : null);
 
         CsrfSupport.apply(http, mode);
 
@@ -56,7 +54,7 @@ public class SecurityConfig {
             .authorizeHttpRequests(auth -> auth
                 .dispatcherTypeMatchers(DispatcherType.ASYNC, DispatcherType.ERROR).permitAll()
                 .requestMatchers("/actuator/**", "/internal/**", "/api/v1/auth/config").permitAll()
-                .requestMatchers("/api/v1/auth/login").permitAll()
+                .requestMatchers("/api/v1/auth/login", "/api/v1/auth/oidc/login", "/api/v1/auth/callback").permitAll()
                 .anyRequest().authenticated()
             )
             .addFilterBefore(new InternalTokenFilter(internalToken, objectMapper), UsernamePasswordAuthenticationFilter.class)
